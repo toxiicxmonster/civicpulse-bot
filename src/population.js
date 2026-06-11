@@ -29,17 +29,33 @@ function isNay(v) {
 }
 
 // Returns { yeaPct, nayPct } or null on error.
-// Senate: sums state populations per senator's vote. A state with split senators
-//   appears on both sides — intentional, it reflects a genuinely divided state.
+// Senate: each state is counted once for whichever side its senators favor.
+//   When senators from a state split 1-1, the state's population is split 50/50.
+//   This prevents any side from exceeding 100%.
 // House: districts are apportioned equal population, so count × avgDistrictPop.
 function calcPopRepresented(vote) {
   try {
     const all = [...(vote.republicans || []), ...(vote.democrats || [])];
 
-    let yeaPop, nayPop;
+    let yeaPop = 0, nayPop = 0;
+
     if (vote.chamber === 'SENATE') {
-      yeaPop = all.filter(isYea).reduce((s, v) => s + (STATE_POP[v.person?.state] || 0), 0);
-      nayPop = all.filter(isNay).reduce((s, v) => s + (STATE_POP[v.person?.state] || 0), 0);
+      // Tally each state's yea/nay senator count, then assign population proportionally
+      const stateVotes = {};
+      for (const v of all) {
+        const st = v.person?.state;
+        if (!st) continue;
+        if (!stateVotes[st]) stateVotes[st] = { yea: 0, nay: 0 };
+        if (isYea(v)) stateVotes[st].yea++;
+        else if (isNay(v)) stateVotes[st].nay++;
+      }
+      for (const [st, { yea, nay }] of Object.entries(stateVotes)) {
+        const pop   = STATE_POP[st] || 0;
+        const total = yea + nay;
+        if (total === 0) continue;
+        yeaPop += pop * yea / total;
+        nayPop += pop * nay / total;
+      }
     } else {
       const t = vote.totals || {};
       yeaPop = (t.Yea || 0) * AVG_DISTRICT_POP;

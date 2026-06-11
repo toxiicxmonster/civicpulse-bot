@@ -1,13 +1,24 @@
 'use strict';
 require('dotenv').config();
 
-const { getNewBills, getNewVotes, getAdjournmentUpdate }                         = require('./checker');
-const { formatBillThread, formatVoteSummary, formatAdjournedPost, formatReturnedPost } = require('./formatter');
-const { postThread, postVoteThread }                                              = require('./xpost');
-const { markBillPosted, markVotePosted, markLastVoteDate, setRecessState }       = require('./tracker');
-const { generateVoteImage }                                                       = require('./voteImage');
+const cron = require('node-cron');
 
-const POLL_MS = (parseInt(process.env.POLL_INTERVAL_MINUTES, 10) || 15) * 60 * 1000;
+const { getNewBills, getNewVotes, getAdjournmentUpdate }                               = require('./checker');
+const { formatBillThread, formatVoteSummary, formatAdjournedPost, formatReturnedPost } = require('./formatter');
+const { postThread, postVoteThread }                                                    = require('./xpost');
+const { markBillPosted, markVotePosted, markLastVoteDate, setRecessState }             = require('./tracker');
+const { generateVoteImage }                                                             = require('./voteImage');
+
+// ─── Startup validation ───────────────────────────────────────────────────────
+
+function validateEnv() {
+  const required = ['CONGRESS_API_KEY', 'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET'];
+  const missing  = required.filter(k => !process.env[k]);
+  if (missing.length) {
+    console.error('[bot] fatal: missing required env vars:', missing.join(', '));
+    process.exit(1);
+  }
+}
 
 // ─── Single run ───────────────────────────────────────────────────────────────
 
@@ -74,14 +85,25 @@ async function runOnce() {
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
-const singleRun = process.argv.includes('--single-run');
+validateEnv();
 
-if (singleRun) {
+if (process.argv.includes('--single-run')) {
   runOnce()
     .then(() => { console.log('[bot] done'); process.exit(0); })
     .catch(err => { console.error('[bot] fatal:', err); process.exit(1); });
 } else {
-  console.log(`[bot] starting poll loop every ${POLL_MS / 60000} min…`);
-  runOnce();
-  setInterval(runOnce, POLL_MS);
+  // Build cron expression from POLL_INTERVAL_MINUTES (default 15, clamped 1–59)
+  const pollMins = Math.min(59, Math.max(1, parseInt(process.env.POLL_INTERVAL_MINUTES, 10) || 15));
+  const cronExpr = `*/${pollMins} * * * *`;
+
+  console.log(`[bot] starting — polling every ${pollMins} min (cron: "${cronExpr}")`);
+
+  // Fire immediately on startup, then on schedule
+  runOnce().catch(err => console.error('[bot] run error:', err));
+  cron.schedule(cronExpr, () => runOnce().catch(err => console.error('[bot] run error:', err)));
+
+  process.on('SIGTERM', () => {
+    console.log('[bot] SIGTERM received — shutting down');
+    process.exit(0);
+  });
 }

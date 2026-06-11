@@ -21,10 +21,12 @@ async function cgGet(path, params = {}) {
 // ─── Member lookup table (bioguideId → name/district) ────────────────────────
 // Built once per bot run so we can enrich House XML (which only has last names).
 
-let _memberMap = null;
+let _memberMap     = null;
+let _memberMapDate = null;
 
 async function getMemberMap() {
-  if (_memberMap) return _memberMap;
+  const today = new Date().toISOString().split('T')[0];
+  if (_memberMap && _memberMapDate === today) return _memberMap;
   _memberMap = {};
   let offset = 0;
 
@@ -44,6 +46,7 @@ async function getMemberMap() {
     if (offset >= (data.pagination?.count ?? 0) || batch.length === 0) break;
   }
 
+  _memberMapDate = today;
   return _memberMap;
 }
 

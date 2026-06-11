@@ -2,7 +2,7 @@ services:
   - type: worker
     name: civicpulse-bot
     runtime: node
-    buildCommand: npm ci
+    buildCommand: npm install
     startCommand: node src/bot.js
     disk:
       name: bot-data
@@ -14,7 +14,7 @@ services:
       - key: DATA_DIR
         value: /data
       - key: POLL_INTERVAL_MINUTES
-        value: 5
+        value: 15
       - key: DRY_RUN
         value: false
       - key: CONGRESS_API_KEY
