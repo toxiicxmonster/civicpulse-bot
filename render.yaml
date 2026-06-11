@@ -29,3 +29,5 @@ services:
         sync: false
       - key: X_ACCESS_SECRET
         sync: false
+      - key: TS_ACCESS_TOKEN
+        sync: false

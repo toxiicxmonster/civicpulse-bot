@@ -14,12 +14,19 @@ const VOTE_IMAGE = process.env.VOTE_IMAGE !== 'false';
 // ─── Startup validation ───────────────────────────────────────────────────────
 
 function validateEnv() {
-  const required = ['CONGRESS_API_KEY', 'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET'];
-  const missing  = required.filter(k => !process.env[k]);
-  if (missing.length) {
-    console.error('[bot] fatal: missing required env vars:', missing.join(', '));
+  if (!process.env.CONGRESS_API_KEY) {
+    console.error('[bot] fatal: CONGRESS_API_KEY is required');
     process.exit(1);
   }
+  const hasX  = process.env.X_API_KEY && process.env.X_API_SECRET &&
+                 process.env.X_ACCESS_TOKEN && process.env.X_ACCESS_SECRET;
+  const hasTS = process.env.TS_ACCESS_TOKEN;
+  if (!hasX && !hasTS) {
+    console.error('[bot] fatal: configure at least one posting platform — set X API keys or TS_ACCESS_TOKEN');
+    process.exit(1);
+  }
+  if (hasX)  console.log('[bot] platform: X enabled');
+  if (hasTS) console.log('[bot] platform: Truth Social enabled');
 }
 
 // ─── Single run ───────────────────────────────────────────────────────────────
