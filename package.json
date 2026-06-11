@@ -1,0 +1,22 @@
+{
+  "name": "civicpulse-bot",
+  "version": "1.0.0",
+  "description": "Auto-posts Congressional votes and new bills to CivicPulse X account",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/bot.js",
+    "dev": "node --watch src/bot.js",
+    "ci": "node src/bot.js --single-run"
+  },
+  "keywords": [],
+  "author": "Bailey McCreary",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
+    "axios": "^1.17.0",
+    "dotenv": "^17.4.2",
+    "node-cron": "^4.2.1",
+    "twitter-api-v2": "^1.29.0"
+  }
+}

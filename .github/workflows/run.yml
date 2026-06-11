@@ -1,0 +1,49 @@
+name: CivicPulse Bot
+
+on:
+  # Run hourly 9 am – 9 pm ET.
+  # GitHub Actions cron is UTC; ET is UTC-5 (EST) / UTC-4 (EDT).
+  # 14:00–02:00 UTC covers 9am-9pm EST; adjust for daylight saving if needed.
+  schedule:
+    - cron: '0 14-23 * * *'  # 9am–6pm EST
+    - cron: '0 0-2 * * *'    # 7pm–9pm EST (continues past midnight UTC)
+  workflow_dispatch:          # allow manual trigger from GitHub UI
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write         # needed to commit posted.json back
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run bot (single-run mode)
+        env:
+          CONGRESS_API_KEY:  ${{ secrets.CONGRESS_API_KEY }}
+          X_API_KEY:         ${{ secrets.X_API_KEY }}
+          X_API_SECRET:      ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN:    ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET:   ${{ secrets.X_ACCESS_SECRET }}
+          DRY_RUN:           'false'
+        run: node src/bot.js --single-run
+
+      - name: Commit updated posted.json
+        run: |
+          git config user.name  "CivicPulse Bot"
+          git config user.email "bot@civicpulse.app"
+          git add data/posted.json
+          git diff --staged --quiet || git commit -m "chore: update posted.json [skip ci]"
+          git push
