@@ -10,7 +10,18 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(gh repo *)",
-      "PowerShell(gh repo create toxiicxmonster/civicpulse-bot --public --source \"c:\\\\Users\\\\Bailey McCreary\\\\civicpulse-bot\" --remote origin --push)"
+      "PowerShell(gh repo create toxiicxmonster/civicpulse-bot --public --source \"c:\\\\Users\\\\Bailey McCreary\\\\civicpulse-bot\" --remote origin --push)",
+      "Bash(node src/bot.js --single-run)",
+      "PowerShell(cd \"c:\\\\Users\\\\Bailey McCreary\\\\civicpulse-bot\"; $env:DRY_RUN='false'; node test-post.js 2>&1)",
+      "PowerShell(cd \"c:\\\\Users\\\\Bailey McCreary\\\\civicpulse-bot\"; $env:DRY_RUN='false'; $env:VOTE_IMAGE='false'; node test-post.js 2>&1)",
+      "Bash(node -e \"require\\('./src/xpost'\\); console.log\\('xpost loads OK'\\)\")",
+      "Bash(node test-post.js)",
+      "Bash(Remove-Item -Recurse -Force src\\\\services, src\\\\monitors, src\\\\utils)",
+      "Bash(git reset *)",
+      "Bash(DRY_RUN=false node test-post.js)",
+      "Bash(node -e ' *)",
+      "Bash(DRY_RUN=false node src/bot.js --single-run)",
+      "Bash(VOTE_IMAGE=true DRY_RUN=false node src/bot.js --single-run)"
     ]
   }
 }
