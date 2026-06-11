@@ -138,10 +138,29 @@ async function bskyUploadBlob(imageBuffer) {
   });
 }
 
+// Bluesky requires explicit facets for URLs to render as hyperlinks.
+// Byte positions (not char positions) are required by the AT Protocol lexicon.
+function bskyFacets(text) {
+  const facets = [];
+  const urlRe  = /https?:\/\/[^\s\])’]+/g;
+  let m;
+  while ((m = urlRe.exec(text)) !== null) {
+    const start = Buffer.byteLength(text.slice(0, m.index), 'utf8');
+    const end   = start + Buffer.byteLength(m[0], 'utf8');
+    facets.push({
+      index:    { byteStart: start, byteEnd: end },
+      features: [{ '$type': 'app.bsky.richtext.facet#link', uri: m[0] }],
+    });
+  }
+  return facets.length ? facets : null;
+}
+
 async function bskyCreatePost(sess, text, reply = null, embed = null) {
   const record = { '$type': 'app.bsky.feed.post', text, createdAt: new Date().toISOString() };
-  if (reply) record.reply = reply;
-  if (embed) record.embed = embed;
+  if (reply)  record.reply  = reply;
+  if (embed)  record.embed  = embed;
+  const facets = bskyFacets(text);
+  if (facets) record.facets = facets;
   const res = await axios.post(`${BSKY_BASE}/xrpc/com.atproto.repo.createRecord`, {
     repo: sess.did, collection: 'app.bsky.feed.post', record,
   }, {
