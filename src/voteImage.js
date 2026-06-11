@@ -5,7 +5,7 @@ const { createCanvas } = require('@napi-rs/canvas');
 const IMG_W   = 1400;
 const PAD     = 20;
 const LINE    = 15;      // line height for member names
-const FONT    = 'Arial';
+const FONT    = 'sans-serif';
 
 const C = {
   bg:     '#0d1117',

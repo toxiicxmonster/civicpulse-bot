@@ -12,6 +12,7 @@
   "author": "Bailey McCreary",
   "license": "ISC",
   "type": "commonjs",
+  "engines": { "node": ">=20" },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.0",
     "axios": "^1.17.0",
