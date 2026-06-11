@@ -330,4 +330,75 @@ async function getAdjournmentUpdate(newVoteDates) {
   return null;
 }
 
-module.exports = { getNewBills, getNewVotes, getAdjournmentUpdate };
+// ─── Test helpers (bypass tracker, return exactly one result) ────────────────
+
+async function getLatestVote() {
+  const raw       = await fetchRecentVotes(5);
+  const memberMap = await getMemberMap();
+
+  for (const vote of raw) {
+    const { congress, session, chamber, number, passed, result: voteResult,
+            total_plus: yea = 0, total_minus: nay = 0, total_other: other = 0 } = vote;
+    if (voteResult === null || voteResult === undefined) continue;
+    const ch = chamber === 'senate' ? 'SENATE' : 'HOUSE';
+    try {
+      const voters = ch === 'SENATE'
+        ? await fetchSenateVoters(congress, session, number)
+        : await fetchHouseVoters(session, number, memberMap);
+
+      const republicans = voters.filter(v => v.person?.party === 'Republican');
+      const democrats   = voters.filter(v => v.person?.party === 'Democrat');
+      const didPass     = passed === true || /pass|agree|adopt|approv/i.test(String(voteResult));
+      const rb = vote.related_bill;
+      const { parsedBillId, parsedUrl } = parseBillFromQuestion(vote.question || '', congress);
+      const url = (rb?.congress != null && rb?.bill_number != null)
+        ? billUrl(rb.congress, (rb.bill_type || '').toLowerCase(), rb.bill_number)
+        : parsedUrl;
+
+      const voteObj = {
+        trackingId: `vote:${congress}-${session}-${ch[0]}-${number}`,
+        voteId:      `${congress}-${session}-${ch[0]}-${number}`,
+        chamber: ch, billId: parsedBillId,
+        question: vote.question || 'Procedural Vote',
+        result: didPass ? 'PASSED' : 'FAILED', resultEmoji: didPass ? '✅' : '❌',
+        totals: { Yea: yea, Nay: nay, 'Not Voting': other, Present: 0 },
+        republicans, democrats, url, population: null,
+      };
+      voteObj.population = calcPopRepresented(voteObj);
+      return voteObj;
+    } catch { continue; }
+  }
+  return null;
+}
+
+async function getLatestBill(days = 30) {
+  const raw   = await fetchRecentBills(50);
+  const since = cutoff(days);
+
+  for (const bill of raw) {
+    if ((bill.latestAction?.actionDate || '') < cutoff(days * 2)) continue;
+    const congress = bill.congress;
+    const type     = (bill.type || '').toLowerCase();
+    const number   = bill.number;
+    try {
+      const detail = await fetchBillDetail(congress, type, number);
+      if (!detail || (detail.introducedDate || '') < since) continue;
+      const summary    = await fetchBillSummary(congress, type, number);
+      const cosponsors = await fetchBillCosponsors(congress, type, number);
+      const sponsors   = [];
+      for (const sp of (detail.sponsors || []).slice(0, 1))
+        sponsors.push({ name: `${sp.firstName} ${sp.lastName}`, party: sp.party, state: sp.state });
+      for (const co of cosponsors.slice(0, 5))
+        sponsors.push({ name: `${co.firstName} ${co.lastName}`, party: co.party, state: co.state });
+      return {
+        trackingId: `bill:${congress}:${type}:${number}`,
+        billId: billId(type, number), congress, type, number,
+        title: detail.title || bill.title || 'Untitled',
+        synopsis: summary, sponsors, url: billUrl(congress, type, number),
+      };
+    } catch { continue; }
+  }
+  return null;
+}
+
+module.exports = { getNewBills, getNewVotes, getAdjournmentUpdate, getLatestVote, getLatestBill };
