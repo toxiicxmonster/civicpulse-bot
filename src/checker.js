@@ -201,6 +201,30 @@ async function getNewBills() {
 
 // ─── getNewVotes ──────────────────────────────────────────────────────────────
 
+// Parse a bill ID and congress.gov URL out of a vote question string.
+// Patterns are ordered most-specific → least-specific so "H.J.Res." doesn't
+// accidentally match the "H.R." pattern first.
+function parseBillFromQuestion(question, congress) {
+  const patterns = [
+    [/\bH\.?\s*J\.?\s*Res\.?\s*(\d+)/i,   'hjres'],
+    [/\bS\.?\s*J\.?\s*Res\.?\s*(\d+)/i,   'sjres'],
+    [/\bH\.?\s*Con\.?\s*Res\.?\s*(\d+)/i, 'hconres'],
+    [/\bS\.?\s*Con\.?\s*Res\.?\s*(\d+)/i, 'sconres'],
+    [/\bH\.?\s*Res\.?\s*(\d+)/i,          'hres'],
+    [/\bS\.?\s*Res\.?\s*(\d+)/i,          'sres'],
+    [/\bH\.?\s*R\.?\s*(\d+)/i,            'hr'],
+    [/\bS\.?\s*(\d+)\b(?!\s*Res)/i,       's'],
+  ];
+  for (const [re, type] of patterns) {
+    const m = question.match(re);
+    if (m) {
+      const num = parseInt(m[1], 10);
+      return { parsedBillId: billId(type, num), parsedUrl: billUrl(congress, type, num) };
+    }
+  }
+  return { parsedBillId: null, parsedUrl: null };
+}
+
 async function fetchRecentVotes(limit = 20) {
   return (await axios.get(`${GOVTRACK_BASE}/vote`, {
     params: { limit, sort: '-created', format: 'json' },
@@ -236,13 +260,13 @@ async function getNewVotes() {
 
       const didPass = passed === true || /pass|agree|adopt|approv/i.test(String(voteResult));
 
-      const rb  = vote.related_bill;
+      // Try related_bill first, then parse bill ID from the question text
+      const rb = vote.related_bill;
+      const { parsedBillId, parsedUrl } = parseBillFromQuestion(vote.question || '', congress);
       const url = (rb?.congress != null && rb?.bill_number != null)
         ? billUrl(rb.congress, (rb.bill_type || '').toLowerCase(), rb.bill_number)
-        : null;
-
-      const qMatch  = (vote.question || '').match(/\b([HS]\.?\s*(?:J\.\s*)?(?:Con\.\s*)?(?:Res\.\s*)?\s*\d+)/i);
-      const voteBillId = qMatch ? qMatch[0].replace(/\s+/g, '') : null;
+        : parsedUrl;
+      const voteBillId = parsedBillId;
 
       result.push({
         trackingId:  tid,
