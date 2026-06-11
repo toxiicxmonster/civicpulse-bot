@@ -24,14 +24,13 @@ async function xPostThread(posts) {
 }
 
 async function xPostVoteThread(summaryText, imageBuffer) {
+  // Embed image directly in the post — X Basic does not allow media in reply tweets
+  const text = summaryText.replace('\n\n📊 Breakdown → reply', '');
   if (imageBuffer) {
     const mediaId = await xClient().v1.uploadMedia(imageBuffer, { mimeType: 'image/png' });
-    await xClient().v2.tweetThread([
-      { text: summaryText },
-      { text: '📊 Full member breakdown:', media: { media_ids: [mediaId] } },
-    ]);
+    await xClient().v2.tweet({ text, media: { media_ids: [mediaId] } });
   } else {
-    await xClient().v2.tweet(summaryText);
+    await xClient().v2.tweet(text);
   }
   console.log('[xpost] posted vote to X');
 }
