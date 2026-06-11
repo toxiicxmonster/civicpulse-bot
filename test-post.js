@@ -9,9 +9,11 @@ const { formatBillThread, formatVoteSummary }         = require('./src/formatter
 const { postThread, postVoteThread }                  = require('./src/xpost');
 const { generateVoteImage }                           = require('./src/voteImage');
 
+const VOTE_IMAGE = process.env.VOTE_IMAGE !== 'false';
+
 async function main() {
   const dry = process.env.DRY_RUN === 'true';
-  console.log(`[test-post] mode: ${dry ? 'DRY RUN' : 'LIVE'}\n`);
+  console.log(`[test-post] mode: ${dry ? 'DRY RUN' : 'LIVE'} | image: ${VOTE_IMAGE}\n`);
 
   // ── 1. Vote ────────────────────────────────────────────────────────────────
   console.log('[test-post] fetching most recent vote…');
@@ -19,9 +21,12 @@ async function main() {
   if (!vote) { console.error('[test-post] no vote found'); process.exit(1); }
 
   console.log(`[test-post] posting vote: ${vote.voteId} — ${vote.question.slice(0, 60)}`);
-  const summary = formatVoteSummary(vote);
-  const image   = generateVoteImage(vote);
-  await postVoteThread(summary, image);
+  const summary = formatVoteSummary(vote, { imageReply: VOTE_IMAGE });
+  if (VOTE_IMAGE) {
+    await postVoteThread(summary, generateVoteImage(vote));
+  } else {
+    await postThread([summary]);
+  }
   console.log('[test-post] vote posted ✓\n');
 
   // ── 2. Bill (30-day window) ────────────────────────────────────────────────
