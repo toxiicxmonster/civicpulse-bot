@@ -1,7 +1,6 @@
 'use strict';
 const { TwitterApi } = require('twitter-api-v2');
 const axios          = require('axios');
-const FormData       = require('form-data');
 
 // ─── X ───────────────────────────────────────────────────────────────────────
 
@@ -35,49 +34,6 @@ async function xPostVoteThread(summaryText, imageBuffer) {
     await xClient().v2.tweet(summaryText);
   }
   console.log('[xpost] posted vote to X');
-}
-
-// ─── Truth Social ─────────────────────────────────────────────────────────────
-
-const TS_BASE   = process.env.TS_BASE_URL || 'https://truthsocial.com';
-const tsEnabled = () => !!process.env.TS_ACCESS_TOKEN;
-
-async function tsPost(text, replyToId = null, mediaIds = []) {
-  const body = { status: text };
-  if (replyToId)    body.in_reply_to_id = replyToId;
-  if (mediaIds.length) body.media_ids   = mediaIds;
-  const res = await axios.post(`${TS_BASE}/api/v1/statuses`, body, {
-    headers: { Authorization: `Bearer ${process.env.TS_ACCESS_TOKEN}` },
-    timeout: 15000,
-  });
-  return res.data.id;
-}
-
-async function tsUploadMedia(imageBuffer) {
-  const form = new FormData();
-  form.append('file', imageBuffer, { filename: 'vote.png', contentType: 'image/png' });
-  const res = await axios.post(`${TS_BASE}/api/v1/media`, form, {
-    headers: { Authorization: `Bearer ${process.env.TS_ACCESS_TOKEN}`, ...form.getHeaders() },
-    timeout: 30000,
-  });
-  return res.data.id;
-}
-
-async function tsPostThread(posts) {
-  let replyToId = null;
-  for (const text of posts) replyToId = await tsPost(text, replyToId);
-  console.log('[xpost] posted thread to Truth Social');
-}
-
-async function tsPostVoteThread(summaryText, imageBuffer) {
-  if (imageBuffer) {
-    const mediaId = await tsUploadMedia(imageBuffer);
-    const postId  = await tsPost(summaryText);
-    await tsPost('📊 Full member breakdown:', postId, [mediaId]);
-  } else {
-    await tsPost(summaryText);
-  }
-  console.log('[xpost] posted vote to Truth Social');
 }
 
 // ─── Bluesky (AT Protocol) ───────────────────────────────────────────────────
@@ -212,9 +168,8 @@ async function postThread(posts) {
   }
 
   const tasks = [];
-  if (xEnabled())    tasks.push(xPostThread(posts).catch(e    => console.error('[xpost] X error:',            e.message)));
-  if (tsEnabled())   tasks.push(tsPostThread(posts).catch(e   => console.error('[xpost] Truth Social error:', e.message)));
-  if (bskyEnabled()) tasks.push(bskyPostThread(posts).catch(e => console.error('[xpost] Bluesky error:',      e.message)));
+  if (xEnabled())    tasks.push(xPostThread(posts).catch(e    => console.error('[xpost] X error:',       e.message)));
+  if (bskyEnabled()) tasks.push(bskyPostThread(posts).catch(e => console.error('[xpost] Bluesky error:', e.message)));
   if (!tasks.length) console.warn('[xpost] no platforms configured — nothing posted');
   await Promise.all(tasks);
 }
@@ -230,9 +185,8 @@ async function postVoteThread(summaryText, imageBuffer) {
   }
 
   const tasks = [];
-  if (xEnabled())    tasks.push(xPostVoteThread(summaryText, imageBuffer).catch(e    => console.error('[xpost] X error:',            e.message)));
-  if (tsEnabled())   tasks.push(tsPostVoteThread(summaryText, imageBuffer).catch(e   => console.error('[xpost] Truth Social error:', e.message)));
-  if (bskyEnabled()) tasks.push(bskyPostVoteThread(summaryText, imageBuffer).catch(e => console.error('[xpost] Bluesky error:',      e.message)));
+  if (xEnabled())    tasks.push(xPostVoteThread(summaryText, imageBuffer).catch(e    => console.error('[xpost] X error:',       e.message)));
+  if (bskyEnabled()) tasks.push(bskyPostVoteThread(summaryText, imageBuffer).catch(e => console.error('[xpost] Bluesky error:', e.message)));
   if (!tasks.length) console.warn('[xpost] no platforms configured — nothing posted');
   await Promise.all(tasks);
 }
