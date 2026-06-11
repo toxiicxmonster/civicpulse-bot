@@ -2,14 +2,14 @@
 const { createCanvas } = require('@napi-rs/canvas');
 
 // ── Layout constants ──────────────────────────────────────────────────────────
-const IMG_W   = 1400;
-const PAD     = 20;
-const LINE    = 15;      // line height for member names
-const FONT    = 'sans-serif';
+const IMG_W  = 2800;
+const PAD    = 40;
+const LINE   = 28;   // line height for member names
+const COLS   = 2;    // name columns per panel
+const FONT   = 'sans-serif';
 
 const C = {
   bg:     '#0d1117',
-  panel:  '#161b22',
   border: '#30363d',
   white:  '#e6edf3',
   dim:    '#8b949e',
@@ -25,17 +25,17 @@ const C = {
 function isYea(v) { return /yea|yes|aye|\+/i.test(String(v?.option?.value ?? v?.option ?? '')); }
 function isNay(v) { return /nay|no|^-$/i.test(String(v?.option?.value ?? v?.option ?? '')); }
 
-function shortName(voter) {
-  const p    = voter.person || {};
-  const last = p.lastname || '?';
-  const loc  = p.district ? `${p.state}-${p.district}` : (p.state || '?');
-  return `${last} (${loc})`;
+function memberName(voter) {
+  const p     = voter.person || {};
+  const first = p.firstname || '';
+  const last  = p.lastname  || '?';
+  const loc   = p.district ? `${p.state}-${p.district}` : (p.state || '?');
+  return `${first} ${last} (${loc})`.trim();
 }
 
-// Calculate the pixel height that drawSection will consume
 function sectionHeight(count) {
-  const labelH  = LINE + 4;
-  const namesH  = count === 0 ? LINE + 6 : Math.ceil(count / 3) * LINE + 6;
+  const labelH = LINE + 6;
+  const namesH = count === 0 ? LINE + 8 : Math.ceil(count / COLS) * LINE + 8;
   return labelH + namesH;
 }
 
@@ -43,125 +43,116 @@ function panelBodyHeight(voters) {
   const yea    = voters.filter(isYea).length;
   const nay    = voters.filter(isNay).length;
   const absent = voters.length - yea - nay;
-  return (LINE + 10)           // party header
-       + (LINE + PAD)          // totals row
+  return (LINE + 16)          // party header
+       + (LINE + PAD)         // totals row
        + sectionHeight(yea)
        + sectionHeight(nay)
        + sectionHeight(absent)
-       + PAD;                  // bottom padding
+       + PAD;
 }
 
 // ── Draw helpers ──────────────────────────────────────────────────────────────
 
 function drawSection(ctx, label, color, voters, x, y, colW) {
-  // Section label
   ctx.fillStyle = color;
-  ctx.font      = `bold 11px ${FONT}`;
+  ctx.font      = `bold 22px ${FONT}`;
   ctx.fillText(label, x, y);
-  y += LINE + 2;
+  y += LINE + 4;
 
   if (voters.length === 0) {
     ctx.fillStyle = C.dim;
-    ctx.font      = `11px ${FONT}`;
+    ctx.font      = `20px ${FONT}`;
     ctx.fillText('—', x, y);
-    return y + LINE + 6;
+    return y + LINE + 8;
   }
 
-  const names  = voters.map(shortName);
-  const cols   = 3;
-  const perCol = Math.ceil(names.length / cols);
+  const names  = voters.map(memberName);
+  const perCol = Math.ceil(names.length / COLS);
 
   ctx.fillStyle = C.white;
-  ctx.font      = `11px ${FONT}`;
+  ctx.font      = `20px ${FONT}`;
 
-  for (let c = 0; c < cols; c++) {
+  for (let c = 0; c < COLS; c++) {
     const cx    = x + c * colW;
     const slice = names.slice(c * perCol, (c + 1) * perCol);
     slice.forEach((name, row) => ctx.fillText(name, cx, y + row * LINE));
   }
 
-  return y + perCol * LINE + 6;
+  return y + perCol * LINE + 8;
 }
 
 function drawPanel(ctx, label, accentColor, voters, panelX, bodyY, panelW) {
   const contentX = panelX + PAD;
-  const colW     = Math.floor((panelW - PAD * 2) / 3);
+  const colW     = Math.floor((panelW - PAD * 2) / COLS);
 
   let y = bodyY + PAD;
 
-  // Party header
   ctx.fillStyle = accentColor;
-  ctx.font      = `bold 14px ${FONT}`;
+  ctx.font      = `bold 28px ${FONT}`;
   ctx.fillText(label, contentX, y);
-  y += LINE + 8;
+  y += LINE + 16;
 
-  // Totals row
   const yea    = voters.filter(isYea);
   const nay    = voters.filter(isNay);
   const absent = voters.filter(v => !isYea(v) && !isNay(v));
 
-  ctx.font = `12px ${FONT}`;
+  ctx.font = `24px ${FONT}`;
   ctx.fillStyle = C.green; ctx.fillText(`YEA ${yea.length}`,    contentX,       y);
-  ctx.fillStyle = C.red;   ctx.fillText(`NAY ${nay.length}`,    contentX + 100, y);
-  ctx.fillStyle = C.dim;   ctx.fillText(`ABS ${absent.length}`, contentX + 195, y);
+  ctx.fillStyle = C.red;   ctx.fillText(`NAY ${nay.length}`,    contentX + 200, y);
+  ctx.fillStyle = C.dim;   ctx.fillText(`ABS ${absent.length}`, contentX + 390, y);
   y += LINE + PAD;
 
-  y = drawSection(ctx, `YEA (${yea.length})`,    C.green, yea,    contentX, y, colW);
-  y = drawSection(ctx, `NAY (${nay.length})`,    C.red,   nay,    contentX, y, colW);
-  y = drawSection(ctx, `NOT VOTING (${absent.length})`, C.dim, absent, contentX, y, colW);
+  y = drawSection(ctx, `YEA (${yea.length})`,           C.green, yea,    contentX, y, colW);
+  y = drawSection(ctx, `NAY (${nay.length})`,           C.red,   nay,    contentX, y, colW);
+  y = drawSection(ctx, `NOT VOTING (${absent.length})`, C.dim,   absent, contentX, y, colW);
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
 function generateVoteImage(vote) {
-  const panelW  = Math.floor(IMG_W / 2);
-  const rBodyH  = panelBodyHeight(vote.republicans);
-  const dBodyH  = panelBodyHeight(vote.democrats);
-  const HEADER  = 80;
-  const IMG_H   = HEADER + Math.max(rBodyH, dBodyH) + PAD;
+  const panelW = Math.floor(IMG_W / 2);
+  const rBodyH = panelBodyHeight(vote.republicans);
+  const dBodyH = panelBodyHeight(vote.democrats);
+  const HEADER = 140;
+  const IMG_H  = HEADER + Math.max(rBodyH, dBodyH) + PAD;
 
-  const canvas  = createCanvas(IMG_W, IMG_H);
-  const ctx     = canvas.getContext('2d');
+  const canvas = createCanvas(IMG_W, IMG_H);
+  const ctx    = canvas.getContext('2d');
 
-  // ── Background ──────────────────────────────────────────────────────────────
   ctx.fillStyle = C.bg;
   ctx.fillRect(0, 0, IMG_W, IMG_H);
 
-  // ── Header bar ──────────────────────────────────────────────────────────────
   ctx.fillStyle = C.header;
   ctx.fillRect(0, 0, IMG_W, HEADER);
 
   const label = vote.billId || vote.chamber;
   ctx.fillStyle = C.white;
-  ctx.font      = `bold 18px ${FONT}`;
-  ctx.fillText(`${label}  —  VOTE BREAKDOWN`, PAD, 28);
-
-  ctx.font = `13px ${FONT}`;
-  ctx.fillStyle = vote.result === 'PASSED' ? C.green : C.red;
-  ctx.fillText(`${vote.result}`, PAD, 54);
+  ctx.font      = `bold 36px ${FONT}`;
+  ctx.fillText(`${label}  —  VOTE BREAKDOWN`, PAD, 52);
 
   const t = vote.totals || {};
+  ctx.font      = `26px ${FONT}`;
+  ctx.fillStyle = vote.result === 'PASSED' ? C.green : C.red;
+  ctx.fillText(vote.result, PAD, 104);
+
   ctx.fillStyle = C.dim;
   ctx.fillText(
     `YEA: ${t.Yea ?? 0}   NAY: ${t.Nay ?? 0}   ABSENT: ${(t['Not Voting'] ?? 0) + (t.Present ?? 0)}`,
-    PAD + 90, 54
+    PAD + 180, 104
   );
 
   ctx.fillStyle = C.dim;
-  ctx.font = `11px ${FONT}`;
-  ctx.fillText('civicpulse.app', IMG_W - 120, 68);
+  ctx.font      = `22px ${FONT}`;
+  ctx.fillText('civicpulse.app', IMG_W - 260, 120);
 
-  // ── Header / body divider ───────────────────────────────────────────────────
   ctx.fillStyle = C.border;
-  ctx.fillRect(0, HEADER, IMG_W, 1);
+  ctx.fillRect(0, HEADER, IMG_W, 2);
 
-  // ── Center divider ──────────────────────────────────────────────────────────
   ctx.fillStyle = C.border;
-  ctx.fillRect(panelW, HEADER, 1, IMG_H - HEADER);
+  ctx.fillRect(panelW, HEADER, 2, IMG_H - HEADER);
 
-  // ── Party panels ────────────────────────────────────────────────────────────
-  drawPanel(ctx, 'REPUBLICANS',   C.rep, vote.republicans, 0,       HEADER, panelW);
-  drawPanel(ctx, 'DEMOCRATS',     C.dem, vote.democrats,   panelW,  HEADER, panelW);
+  drawPanel(ctx, 'REPUBLICANS', C.rep, vote.republicans, 0,      HEADER, panelW);
+  drawPanel(ctx, 'DEMOCRATS',   C.dem, vote.democrats,   panelW, HEADER, panelW);
 
   return canvas.toBuffer('image/png');
 }
