@@ -31,3 +31,7 @@ services:
         sync: false
       - key: TS_ACCESS_TOKEN
         sync: false
+      - key: BSKY_HANDLE
+        sync: false
+      - key: BSKY_APP_PASSWORD
+        sync: false

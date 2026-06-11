@@ -18,15 +18,17 @@ function validateEnv() {
     console.error('[bot] fatal: CONGRESS_API_KEY is required');
     process.exit(1);
   }
-  const hasX  = process.env.X_API_KEY && process.env.X_API_SECRET &&
-                 process.env.X_ACCESS_TOKEN && process.env.X_ACCESS_SECRET;
-  const hasTS = process.env.TS_ACCESS_TOKEN;
-  if (!hasX && !hasTS) {
-    console.error('[bot] fatal: configure at least one posting platform — set X API keys or TS_ACCESS_TOKEN');
+  const hasX    = process.env.X_API_KEY && process.env.X_API_SECRET &&
+                   process.env.X_ACCESS_TOKEN && process.env.X_ACCESS_SECRET;
+  const hasTS   = process.env.TS_ACCESS_TOKEN;
+  const hasBsky = process.env.BSKY_HANDLE && process.env.BSKY_APP_PASSWORD;
+  if (!hasX && !hasTS && !hasBsky) {
+    console.error('[bot] fatal: configure at least one posting platform — X keys, TS_ACCESS_TOKEN, or BSKY_HANDLE+BSKY_APP_PASSWORD');
     process.exit(1);
   }
-  if (hasX)  console.log('[bot] platform: X enabled');
-  if (hasTS) console.log('[bot] platform: Truth Social enabled');
+  if (hasX)    console.log('[bot] platform: X enabled');
+  if (hasTS)   console.log('[bot] platform: Truth Social enabled');
+  if (hasBsky) console.log('[bot] platform: Bluesky enabled');
 }
 
 // ─── Single run ───────────────────────────────────────────────────────────────
