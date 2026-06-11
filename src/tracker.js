@@ -5,9 +5,14 @@ const path = require('path');
 const STATE_FILE = path.join(__dirname, '../data/posted.json');
 
 function load() {
-  if (!fs.existsSync(STATE_FILE)) return { bills: [], votes: [] };
-  try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); }
-  catch { return { bills: [], votes: [] }; }
+  if (!fs.existsSync(STATE_FILE)) return { bills: [], votes: [], lastVoteDate: null, inRecess: false };
+  try {
+    const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    if (!s.lastVoteDate) s.lastVoteDate = null;
+    if (s.inRecess === undefined) s.inRecess = false;
+    return s;
+  }
+  catch { return { bills: [], votes: [], lastVoteDate: null, inRecess: false }; }
 }
 
 function save(state) {
@@ -31,4 +36,24 @@ function markVotePosted(id) {
   save(s);
 }
 
-module.exports = { hasPostedBill, markBillPosted, hasPostedVote, markVotePosted };
+function getLastVoteDate() { return load().lastVoteDate; }
+function isInRecess()      { return load().inRecess; }
+
+function markLastVoteDate(dateStr) {
+  const s = load();
+  s.lastVoteDate = dateStr;
+  save(s);
+}
+
+function setRecessState(flag) {
+  const s = load();
+  s.inRecess = flag;
+  save(s);
+}
+
+module.exports = {
+  hasPostedBill, markBillPosted,
+  hasPostedVote, markVotePosted,
+  getLastVoteDate, markLastVoteDate,
+  isInRecess, setRecessState,
+};

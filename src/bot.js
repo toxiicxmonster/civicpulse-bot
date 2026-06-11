@@ -1,11 +1,11 @@
 'use strict';
 require('dotenv').config();
 
-const { getNewBills, getNewVotes }             = require('./checker');
-const { formatBillThread, formatVoteSummary }  = require('./formatter');
-const { postThread, postVoteThread }           = require('./xpost');
-const { markBillPosted, markVotePosted }       = require('./tracker');
-const { generateVoteImage }                    = require('./voteImage');
+const { getNewBills, getNewVotes, getAdjournmentUpdate }                         = require('./checker');
+const { formatBillThread, formatVoteSummary, formatAdjournedPost, formatReturnedPost } = require('./formatter');
+const { postThread, postVoteThread }                                              = require('./xpost');
+const { markBillPosted, markVotePosted, markLastVoteDate, setRecessState }       = require('./tracker');
+const { generateVoteImage }                                                       = require('./voteImage');
 
 const POLL_MS = (parseInt(process.env.POLL_INTERVAL_MINUTES, 10) || 15) * 60 * 1000;
 
@@ -45,6 +45,29 @@ async function runOnce() {
       console.log(`[bot] posted vote ${vote.voteId}`);
     } catch (err) {
       console.error(`[bot] failed to post vote ${vote.voteId}:`, err.message);
+    }
+  }
+
+  // ── Track last vote date + adjournment detection ──────────────────────────────
+  if (newVotes.length > 0) {
+    markLastVoteDate(new Date().toISOString().split('T')[0]);
+  }
+  const adjStatus = await getAdjournmentUpdate(newVotes.map(v => v.voteId));
+  if (adjStatus === 'adjourned') {
+    try {
+      await postThread([formatAdjournedPost(null)]);
+      setRecessState(true);
+      console.log('[bot] posted adjournment notice');
+    } catch (err) {
+      console.error('[bot] failed to post adjournment notice:', err.message);
+    }
+  } else if (adjStatus === 'returned') {
+    try {
+      await postThread([formatReturnedPost()]);
+      setRecessState(false);
+      console.log('[bot] posted return-from-recess notice');
+    } catch (err) {
+      console.error('[bot] failed to post return notice:', err.message);
     }
   }
 }

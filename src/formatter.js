@@ -125,8 +125,11 @@ function formatVoteSummary(vote) {
   const dAbs = vote.democrats.length - dYea - dNay;
 
   const partyLines = `🐘 R: ✅ ${rYea}  ❌ ${rNay}  ⬜ ${rAbs}\n🫏 D: ✅ ${dYea}  ❌ ${dNay}  ⬜ ${dAbs}`;
+  const popLine    = vote.population
+    ? `\n👥 Pop. represented: ✅ ${vote.population.yeaPct}%  ❌ ${vote.population.nayPct}%`
+    : '';
   const urlLine    = vote.url ? `\n\n📖 Read the full bill:\n${vote.url}` : '';
-  const footer     = `\n\n${partyLines}\n\n📊 Breakdown → reply\n\n#CivicPulse #Congress`;
+  const footer     = `\n\n${partyLines}${popLine}\n\n📊 Breakdown → reply\n\n#CivicPulse #Congress`;
   const counts     = `${vote.resultEmoji} ${vote.result}\nYEA: ${yea} | NAY: ${nay} | ABSENT: ${absent}`;
   const prefix     = `🏛️ VOTE ALERT: ${label}\n\n📋 `;
   const overhead   = prefix.length + `\n\n${counts}`.length + urlLine.length + footer.length;
@@ -142,4 +145,15 @@ function formatVoteThread(vote) {
   return [formatVoteSummary(vote)];
 }
 
-module.exports = { formatBillThread, formatVoteThread, formatVoteSummary };
+// ─── Adjournment posts ────────────────────────────────────────────────────────
+
+function formatAdjournedPost(returnDate) {
+  const line = returnDate ? `🗓️ Scheduled to return: ${returnDate}` : '🗓️ Return date not yet announced.';
+  return `🏛️ CONGRESS HAS ADJOURNED\n\nBoth chambers are now in recess. No votes or floor activity expected until they return.\n\n${line}\n\n#CivicPulse #Congress`;
+}
+
+function formatReturnedPost() {
+  return `🏛️ CONGRESS HAS RETURNED\n\nBoth chambers are back in session. Legislative activity has resumed — stay tuned for upcoming votes.\n\n#CivicPulse #Congress`;
+}
+
+module.exports = { formatBillThread, formatVoteThread, formatVoteSummary, formatAdjournedPost, formatReturnedPost };

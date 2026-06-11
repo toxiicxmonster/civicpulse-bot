@@ -1,6 +1,7 @@
 'use strict';
 const axios = require('axios');
-const { hasPostedBill, hasPostedVote } = require('./tracker');
+const { hasPostedBill, hasPostedVote, getLastVoteDate, isInRecess } = require('./tracker');
+const { calcPopRepresented } = require('./population');
 
 const CONGRESS_BASE = 'https://api.congress.gov/v3';
 const GOVTRACK_BASE = 'https://www.govtrack.us/api/v2';
@@ -140,7 +141,14 @@ function billId(type, number) { return `${DISPLAY[type] || type.toUpperCase()}${
 
 // ─── Bill helpers ─────────────────────────────────────────────────────────────
 
-async function fetchRecentBills(limit = 20) { return (await cgGet('/bill', { sort: 'updateDate+desc', limit })).bills || []; }
+// Current congress number: 1st Congress was 1789, new one every 2 years on odd years
+function currentCongress() { return Math.ceil((new Date().getFullYear() - 1788) / 2); }
+
+async function fetchRecentBills(limit = 20) {
+  // sort=updateDate+desc must stay as a literal + in the URL; axios would encode it as %2B which the API rejects
+  const url = `${CONGRESS_BASE}/bill/${currentCongress()}?api_key=${key()}&sort=updateDate+desc&limit=${limit}&format=json`;
+  return (await axios.get(url, { timeout: 12000 })).data.bills || [];
+}
 async function fetchBillDetail(c, t, n)     { return (await cgGet(`/bill/${c}/${t}/${n}`)).bill || null; }
 async function fetchBillCosponsors(c, t, n) {
   try { return (await cgGet(`/bill/${c}/${t}/${n}/cosponsors`)).cosponsors || []; } catch { return []; }
@@ -159,7 +167,7 @@ function cutoff(days) { const d = new Date(); d.setDate(d.getDate() - days); ret
 
 async function getNewBills() {
   const raw    = await fetchRecentBills(20);
-  const since  = cutoff(3);
+  const since  = cutoff(7);
   const result = [];
 
   for (const bill of raw) {
@@ -168,12 +176,15 @@ async function getNewBills() {
     const number   = bill.number;
     const tid      = `bill:${congress}:${type}:${number}`;
 
-    if ((bill.introducedDate || '') < since) continue;
+    // Quick pre-filter: 14-day window so we don't miss bills with action just outside the 7-day cutoff
+    if ((bill.latestAction?.actionDate || '') < cutoff(14)) continue;
     if (hasPostedBill(tid)) continue;
 
     try {
       const detail     = await fetchBillDetail(congress, type, number);
       if (!detail) continue;
+      // Definitive check: only post bills actually introduced within the window
+      if ((detail.introducedDate || '') < since) continue;
       const summary    = await fetchBillSummary(congress, type, number);
       const cosponsors = await fetchBillCosponsors(congress, type, number);
 
@@ -268,7 +279,7 @@ async function getNewVotes() {
         : parsedUrl;
       const voteBillId = parsedBillId;
 
-      result.push({
+      const voteObj = {
         trackingId:  tid,
         voteId:      `${congress}-${session}-${ch[0]}-${number}`,
         chamber:     ch,
@@ -280,7 +291,10 @@ async function getNewVotes() {
         republicans,
         democrats,
         url,
-      });
+        population:  null,
+      };
+      voteObj.population = calcPopRepresented(voteObj);
+      result.push(voteObj);
     } catch (err) {
       console.error(`[checker] vote ${tid}: ${err.message}`);
     }
@@ -288,4 +302,29 @@ async function getNewVotes() {
   return result;
 }
 
-module.exports = { getNewBills, getNewVotes };
+// ─── Adjournment detection ────────────────────────────────────────────────────
+// Compares today's date to the last known vote date. Returns 'adjourned',
+// 'returned', or null depending on the transition.
+// RECESS_THRESHOLD_DAYS: how many days without a vote before we call it a recess.
+const RECESS_THRESHOLD_DAYS = 5;
+
+async function getAdjournmentUpdate(newVoteDates) {
+  const today      = new Date().toISOString().split('T')[0];
+  const lastKnown  = getLastVoteDate();
+  const alreadyIn  = isInRecess();
+
+  if (newVoteDates.length > 0) {
+    // Votes appeared — if we were in recess, Congress just returned
+    if (alreadyIn) return 'returned';
+    return null;
+  }
+
+  // No new votes this run
+  if (!lastKnown) return null;
+
+  const daysSinceVote = Math.floor((new Date(today) - new Date(lastKnown)) / 86400000);
+  if (!alreadyIn && daysSinceVote >= RECESS_THRESHOLD_DAYS) return 'adjourned';
+  return null;
+}
+
+module.exports = { getNewBills, getNewVotes, getAdjournmentUpdate };

@@ -1,1 +1,6 @@
-﻿{ "bills": [], "votes": [] }
+{
+  "bills": [],
+  "votes": [],
+  "lastVoteDate": null,
+  "inRecess": false
+}
