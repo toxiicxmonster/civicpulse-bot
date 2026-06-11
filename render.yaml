@@ -1,0 +1,29 @@
+services:
+  - type: worker
+    name: civicpulse-bot
+    runtime: node
+    buildCommand: npm ci
+    startCommand: node src/bot.js
+    disk:
+      name: bot-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /data
+      - key: POLL_INTERVAL_MINUTES
+        value: 5
+      - key: DRY_RUN
+        value: false
+      - key: CONGRESS_API_KEY
+        sync: false
+      - key: X_API_KEY
+        sync: false
+      - key: X_API_SECRET
+        sync: false
+      - key: X_ACCESS_TOKEN
+        sync: false
+      - key: X_ACCESS_SECRET
+        sync: false

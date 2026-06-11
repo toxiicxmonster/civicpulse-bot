@@ -2,7 +2,8 @@
 const fs   = require('fs');
 const path = require('path');
 
-const STATE_FILE = path.join(__dirname, '../data/posted.json');
+const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, '../data');
+const STATE_FILE = path.join(DATA_DIR, 'posted.json');
 
 function load() {
   if (!fs.existsSync(STATE_FILE)) return { bills: [], votes: [], lastVoteDate: null, inRecess: false };
