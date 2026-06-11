@@ -9,6 +9,8 @@ const { postThread, postVoteThread }                                            
 const { markBillPosted, markVotePosted, markLastVoteDate, setRecessState }             = require('./tracker');
 const { generateVoteImage }                                                             = require('./voteImage');
 
+const VOTE_IMAGE = process.env.VOTE_IMAGE !== 'false';
+
 // ─── Startup validation ───────────────────────────────────────────────────────
 
 function validateEnv() {
@@ -46,12 +48,16 @@ async function runOnce() {
     }
   }
 
-  // ── Votes: summary tweet + image reply ───────────────────────────────────────
+  // ── Votes: summary tweet (+ image reply if VOTE_IMAGE=true) ─────────────────
   for (const vote of newVotes) {
     try {
-      const summary = formatVoteSummary(vote);
-      const image   = generateVoteImage(vote);
-      await postVoteThread(summary, image);
+      const summary = formatVoteSummary(vote, { imageReply: VOTE_IMAGE });
+      if (VOTE_IMAGE) {
+        const image = generateVoteImage(vote);
+        await postVoteThread(summary, image);
+      } else {
+        await postThread([summary]);
+      }
       markVotePosted(vote.trackingId);
       console.log(`[bot] posted vote ${vote.voteId}`);
     } catch (err) {

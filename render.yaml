@@ -17,6 +17,8 @@ services:
         value: 15
       - key: DRY_RUN
         value: false
+      - key: VOTE_IMAGE
+        value: false
       - key: CONGRESS_API_KEY
         sync: false
       - key: X_API_KEY

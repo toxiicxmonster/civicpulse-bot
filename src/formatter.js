@@ -109,7 +109,7 @@ function formatBillThread(bill) {
 // Returns a single string. Party totals are inlined; the image reply is handled
 // separately in bot.js via voteImage.js.
 
-function formatVoteSummary(vote) {
+function formatVoteSummary(vote, { imageReply = true } = {}) {
   const t      = vote.totals || {};
   const yea    = t.Yea   ?? 0;
   const nay    = t.Nay   ?? 0;
@@ -129,7 +129,8 @@ function formatVoteSummary(vote) {
     ? `\n👥 Pop. represented: ✅ ${vote.population.yeaPct}%  ❌ ${vote.population.nayPct}%`
     : '';
   const urlLine    = vote.url ? `\n\n📖 Read the full bill:\n${vote.url}` : '';
-  const footer     = `\n\n${partyLines}${popLine}\n\n📊 Breakdown → reply\n\n#CivicPulse #Congress`;
+  const breakdownRef = imageReply ? '\n\n📊 Breakdown → reply' : '';
+  const footer     = `\n\n${partyLines}${popLine}${breakdownRef}\n\n#CivicPulse #Congress`;
   const counts     = `${vote.resultEmoji} ${vote.result}\nYEA: ${yea} | NAY: ${nay} | ABSENT: ${absent}`;
   const prefix     = `🏛️ VOTE ALERT: ${label}\n\n📋 `;
   const overhead   = prefix.length + `\n\n${counts}`.length + urlLine.length + footer.length;
