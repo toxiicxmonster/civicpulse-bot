@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check src/tracker.js)",
+      "Bash(node --check src/twitter.js)",
+      "Bash(node --check src/formatter.js)",
+      "Bash(node --check src/checker.js)",
+      "Bash(node --check src/bot.js)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(gh repo *)",
+      "PowerShell(gh repo create toxiicxmonster/civicpulse-bot --public --source \"c:\\\\Users\\\\Bailey McCreary\\\\civicpulse-bot\" --remote origin --push)"
+    ]
+  }
+}
