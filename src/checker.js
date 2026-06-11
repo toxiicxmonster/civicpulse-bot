@@ -219,7 +219,7 @@ async function getNewVotes() {
 
     if (voteResult === null || voteResult === undefined) continue;
 
-    const ch  = chamber === 's' ? 'SENATE' : 'HOUSE';
+    const ch  = chamber === 'senate' ? 'SENATE' : 'HOUSE';
     const tid = `vote:${congress}-${session}-${ch[0]}-${number}`;
     if (hasPostedVote(tid)) continue;
 

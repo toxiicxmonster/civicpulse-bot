@@ -105,48 +105,41 @@ function formatBillThread(bill) {
   return tweets;
 }
 
-// ─── Vote thread ──────────────────────────────────────────────────────────────
+// ─── Vote summary tweet (main post) ──────────────────────────────────────────
+// Returns a single string. Party totals are inlined; the image reply is handled
+// separately in bot.js via voteImage.js.
 
-function formatVoteThread(vote) {
-  const tweets  = [];
-  const t       = vote.totals || {};
-  const yea     = t.Yea   ?? t['+'] ?? 0;
-  const nay     = t.Nay   ?? t['-'] ?? 0;
-  const absent  = (t['Not Voting'] ?? 0) + (t.Present ?? 0);
-  const label   = vote.billId || vote.chamber;
+function formatVoteSummary(vote) {
+  const t      = vote.totals || {};
+  const yea    = t.Yea   ?? 0;
+  const nay    = t.Nay   ?? 0;
+  const absent = (t['Not Voting'] ?? 0) + (t.Present ?? 0);
+  const label  = vote.billId || vote.chamber;
 
-  // Tweet 1 — Vote summary
-  const urlLine  = vote.url ? `\n\n📖 Read the full bill:\n${vote.url}` : '';
-  const hashTags = '\n\n#CivicPulse #Congress';
-  const seeBelow = '\n\n🐘 Republican votes ↓\n🫏 Democrat votes ↓';
-  const counts   = `${vote.resultEmoji} ${vote.result}\nYEA: ${yea} | NAY: ${nay} | ABSENT: ${absent}`;
-  const overhead = `🏛️ VOTE ALERT: ${label}\n\n📋 `.length
-    + `\n\n${counts}`.length + seeBelow.length + urlLine.length + hashTags.length;
+  // Party breakdown lines
+  const rYea = vote.republicans.filter(v => isYea(v)).length;
+  const rNay = vote.republicans.filter(v => isNay(v)).length;
+  const rAbs = vote.republicans.length - rYea - rNay;
+  const dYea = vote.democrats.filter(v => isYea(v)).length;
+  const dNay = vote.democrats.filter(v => isNay(v)).length;
+  const dAbs = vote.democrats.length - dYea - dNay;
 
-  const qLen    = Math.max(30, MAX - overhead);
-  const summary = trunc(vote.question, qLen);
+  const partyLines = `🐘 R: ✅ ${rYea}  ❌ ${rNay}  ⬜ ${rAbs}\n🫏 D: ✅ ${dYea}  ❌ ${dNay}  ⬜ ${dAbs}`;
+  const urlLine    = vote.url ? `\n\n📖 Read the full bill:\n${vote.url}` : '';
+  const footer     = `\n\n${partyLines}\n\n📊 Breakdown → reply\n\n#CivicPulse #Congress`;
+  const counts     = `${vote.resultEmoji} ${vote.result}\nYEA: ${yea} | NAY: ${nay} | ABSENT: ${absent}`;
+  const prefix     = `🏛️ VOTE ALERT: ${label}\n\n📋 `;
+  const overhead   = prefix.length + `\n\n${counts}`.length + urlLine.length + footer.length;
 
-  tweets.push(
-    `🏛️ VOTE ALERT: ${label}\n\n` +
-    `📋 ${summary}\n\n` +
-    `${counts}` +
-    seeBelow + urlLine + hashTags
-  );
+  const qLen   = Math.max(30, MAX - overhead);
+  const synopsis = trunc(vote.question, qLen);
 
-  // Republican vote tweets
-  if (vote.republicans.length > 0) {
-    tweets.push(...buildPartyTweets('🐘', 'REPUBLICAN', label, vote.republicans, vote.chamber, null));
-  }
-
-  // Democrat vote tweets (last tweet includes the footer)
-  const demSuffix = '⬇️ Track your reps: CivicPulse app\n#CivicPulse';
-  if (vote.democrats.length > 0) {
-    tweets.push(...buildPartyTweets('🫏', 'DEMOCRAT', label, vote.democrats, vote.chamber, demSuffix));
-  } else {
-    tweets.push(demSuffix);
-  }
-
-  return tweets;
+  return prefix + synopsis + `\n\n${counts}` + urlLine + footer;
 }
 
-module.exports = { formatBillThread, formatVoteThread };
+// Keep formatVoteThread as an alias that returns [summary] for backward compat
+function formatVoteThread(vote) {
+  return [formatVoteSummary(vote)];
+}
+
+module.exports = { formatBillThread, formatVoteThread, formatVoteSummary };
