@@ -62,8 +62,8 @@ function xClient() {
 }
 
 async function updateXBio(bioText) {
-  // v1.1 endpoint works with OAuth 1.0a (what the bot uses)
-  await xClient().v1.post('account/update_profile', { description: bioText });
+  // POST /1.1/account/update_profile — works with OAuth 1.0a keys
+  await xClient().v1.updateAccountProfile({ description: bioText });
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
@@ -90,7 +90,6 @@ async function forceUpdateBio(inRecess, returnDate = null) {
     console.log(`[bio] X bio updated — ${newStatus.toUpperCase()} (${[...bioText].length} chars)`);
   } catch (err) {
     console.warn('[bio] failed to update X bio:', err.message);
-    throw err;
   }
 }
 
