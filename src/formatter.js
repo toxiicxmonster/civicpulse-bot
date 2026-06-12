@@ -191,4 +191,59 @@ function formatReturnedPost() {
   return `🏛️ CONGRESS HAS RETURNED\n\nBoth chambers are back in session. Legislative activity has resumed — stay tuned for upcoming votes.\n\n#CivicPulse #Congress`;
 }
 
-module.exports = { formatBillThread, formatVoteThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost };
+// ─── Hill Report thread ───────────────────────────────────────────────────────
+
+function formatHillReport({ date, votes, bills }) {
+  // Build a human-readable date string from a YYYY-MM-DD without timezone shift
+  const [y, m, d] = date.split('-').map(Number);
+  const dateStr = new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  const tweets   = [];
+  const passed   = votes.filter(v => v.passed).length;
+  const failed   = votes.length - passed;
+  const voteLine = votes.length > 0
+    ? `🗳️ ${votes.length} vote${votes.length !== 1 ? 's' : ''}: ${passed} passed, ${failed} failed`
+    : '🗳️ No floor votes today';
+  const billLine = bills.length > 0
+    ? `📜 ${bills.length} new bill${bills.length !== 1 ? 's' : ''} introduced`
+    : '📜 No new bills introduced';
+
+  tweets.push(`🗞️ THE HILL REPORT — ${dateStr}\n\n${voteLine}\n${billLine}\n\n#CivicPulse #Congress`);
+
+  // Pack votes into as many tweets as needed
+  if (votes.length > 0) {
+    let current = '🗳️ VOTES TODAY';
+    for (const v of votes) {
+      const emoji  = v.passed ? '✅' : '❌';
+      const label  = v.billId ? `${v.billId} — ` : `${v.chamber}: `;
+      const q      = trunc(v.question, Math.max(20, Math.min(60, MAX - label.length - 5)));
+      const line   = `\n${emoji} ${label}${q}`;
+      if (current.length + line.length > MAX) {
+        tweets.push(current);
+        current = '🗳️ VOTES (cont.)';
+      }
+      current += line;
+    }
+    tweets.push(current);
+  }
+
+  // Pack bills into as many tweets as needed
+  if (bills.length > 0) {
+    let current = '📜 NEW BILLS INTRODUCED';
+    for (const b of bills) {
+      const line = `\n• ${b.billId} — ${trunc(b.title, 55)}`;
+      if (current.length + line.length > MAX) {
+        tweets.push(current);
+        current = '📜 NEW BILLS (cont.)';
+      }
+      current += line;
+    }
+    tweets.push(current);
+  }
+
+  return tweets;
+}
+
+module.exports = { formatBillThread, formatVoteThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport };
