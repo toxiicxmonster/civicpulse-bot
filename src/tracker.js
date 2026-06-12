@@ -9,7 +9,9 @@ function load() {
   if (!fs.existsSync(STATE_FILE)) return { bills: [], votes: [], presidentialActions: [], executiveOrders: [], hillReports: [], lastVoteDate: null, inRecess: false };
   try {
     const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    if (!s.lastVoteDate)          s.lastVoteDate          = null;
+    if (!s.bills)                 s.bills                  = [];
+    if (!s.votes)                 s.votes                  = [];
+    if (!s.lastVoteDate)          s.lastVoteDate           = null;
     if (s.inRecess === undefined) s.inRecess               = false;
     if (!s.presidentialActions)   s.presidentialActions    = [];
     if (!s.executiveOrders)       s.executiveOrders        = [];

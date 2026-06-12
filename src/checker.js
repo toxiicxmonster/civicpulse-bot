@@ -61,7 +61,7 @@ const PARTY_NAME = { D: 'Democrat', R: 'Republican', I: 'Independent', ID: 'Inde
 
 // Parse Senate.gov roll-call XML → voter array compatible with formatter.js
 function parseSenateXML(xml) {
-  return [...xml.matchAll(/<member>([\s\S]*?)<\/member>/gi)].map(m => {
+  return [...String(xml).matchAll(/<member>([\s\S]*?)<\/member>/gi)].map(m => {
     const inner = m[1];
     return {
       person: {
@@ -78,7 +78,7 @@ function parseSenateXML(xml) {
 
 // Parse House Clerk XML → voter array.  First name + district come from memberMap.
 function parseHouseXML(xml, memberMap) {
-  return [...xml.matchAll(/<recorded-vote>([\s\S]*?)<\/recorded-vote>/gi)].map(m => {
+  return [...String(xml).matchAll(/<recorded-vote>([\s\S]*?)<\/recorded-vote>/gi)].map(m => {
     const inner   = m[1];
     const legEl   = inner.match(/<legislator([^>]*)>/);
     const attrs   = legEl ? legEl[1] : '';
@@ -264,12 +264,12 @@ async function getNewVotes() {
     try {
       let voters;
       if (ch === 'SENATE') {
-        voters = await fetchSenateVoters(congress, session, number);
+        voters = (await fetchSenateVoters(congress, session, number)) || [];
       } else {
-        voters = await fetchHouseVoters(session, number, memberMap);
+        voters = (await fetchHouseVoters(session, number, memberMap)) || [];
       }
 
-      const republicans = voters.filter(v => v.person?.party === 'Democrat' ? false : v.person?.party === 'Republican');
+      const republicans = voters.filter(v => v.person?.party === 'Republican');
       const democrats   = voters.filter(v => v.person?.party === 'Democrat');
 
       const didPass = passed === true || /pass|agree|adopt|approv/i.test(String(voteResult));
@@ -402,8 +402,8 @@ async function getLatestVote() {
     const ch = chamber === 'senate' ? 'SENATE' : 'HOUSE';
     try {
       const voters = ch === 'SENATE'
-        ? await fetchSenateVoters(congress, session, number)
-        : await fetchHouseVoters(session, number, memberMap);
+        ? ((await fetchSenateVoters(congress, session, number)) || [])
+        : ((await fetchHouseVoters(session, number, memberMap)) || []);
 
       const republicans = voters.filter(v => v.person?.party === 'Republican');
       const democrats   = voters.filter(v => v.person?.party === 'Democrat');

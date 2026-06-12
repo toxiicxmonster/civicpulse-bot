@@ -151,14 +151,24 @@ async function bskyPostVoteThread(summaryText, imageBuffer) {
 }
 
 // ─── Public API — fans out to every enabled platform ─────────────────────────
+// platform option: 'x' | 'bsky' | 'both' | null (null = all configured)
 
 const DRY = () => process.env.DRY_RUN === 'true';
 
-async function postThread(posts) {
+function resolvePlatforms(platform) {
+  const p = (platform || 'both').toLowerCase();
+  return {
+    useX:    (p === 'x' || p === 'both') && xEnabled(),
+    useBsky: (p === 'bsky' || p === 'bluesky' || p === 'both') && bskyEnabled(),
+  };
+}
+
+async function postThread(posts, { platform = null } = {}) {
   if (!posts?.length) return;
 
   if (DRY()) {
-    console.log('\n===== DRY RUN — Post Thread =====');
+    const label = platform ? platform.toUpperCase() : 'all platforms';
+    console.log(`\n===== DRY RUN — Post Thread [${label}] =====`);
     posts.forEach((t, i) => {
       console.log(`\n[${i + 1}/${posts.length}] (${t.length} chars)\n${t}`);
       console.log('------------------------------------');
@@ -166,16 +176,18 @@ async function postThread(posts) {
     return;
   }
 
+  const { useX, useBsky } = resolvePlatforms(platform);
   const tasks = [];
-  if (xEnabled())    tasks.push(xPostThread(posts).catch(e    => console.error('[xpost] X error:',       e.message)));
-  if (bskyEnabled()) tasks.push(bskyPostThread(posts).catch(e => console.error('[xpost] Bluesky error:', e.message)));
+  if (useX)    tasks.push(xPostThread(posts).catch(e    => console.error('[xpost] X error:',       e.message)));
+  if (useBsky) tasks.push(bskyPostThread(posts).catch(e => console.error('[xpost] Bluesky error:', e.message)));
   if (!tasks.length) console.warn('[xpost] no platforms configured — nothing posted');
   await Promise.all(tasks);
 }
 
-async function postVoteThread(summaryText, imageBuffer) {
+async function postVoteThread(summaryText, imageBuffer, { platform = null } = {}) {
   if (DRY()) {
-    console.log('\n===== DRY RUN — Vote Thread =====');
+    const label = platform ? platform.toUpperCase() : 'all platforms';
+    console.log(`\n===== DRY RUN — Vote Thread [${label}] =====`);
     console.log(`\n[1/2] (${summaryText.length} chars)\n${summaryText}`);
     console.log('------------------------------------');
     if (imageBuffer) console.log(`\n[2/2] [IMAGE ${(imageBuffer.length / 1024).toFixed(0)} KB]`);
@@ -183,11 +195,12 @@ async function postVoteThread(summaryText, imageBuffer) {
     return;
   }
 
+  const { useX, useBsky } = resolvePlatforms(platform);
   const tasks = [];
-  if (xEnabled())    tasks.push(xPostVoteThread(summaryText, imageBuffer).catch(e    => console.error('[xpost] X error:',       e.message)));
-  if (bskyEnabled()) tasks.push(bskyPostVoteThread(summaryText, imageBuffer).catch(e => console.error('[xpost] Bluesky error:', e.message)));
+  if (useX)    tasks.push(xPostVoteThread(summaryText, imageBuffer).catch(e    => console.error('[xpost] X error:',       e.message)));
+  if (useBsky) tasks.push(bskyPostVoteThread(summaryText, imageBuffer).catch(e => console.error('[xpost] Bluesky error:', e.message)));
   if (!tasks.length) console.warn('[xpost] no platforms configured — nothing posted');
   await Promise.all(tasks);
 }
 
-module.exports = { postThread, postVoteThread };
+module.exports = { postThread, postVoteThread, xEnabled, bskyEnabled };

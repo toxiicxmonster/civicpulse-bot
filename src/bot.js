@@ -134,10 +134,19 @@ async function runHillReport(date = new Date().toISOString().split('T')[0], forc
   }
 
   console.log(`[bot] building Hill Report for ${date}…`);
-  const data   = await getHillReportData(date);
-  const thread = formatHillReport(data);
+  let data;
+  try {
+    data = await getHillReportData(date);
+  } catch (err) {
+    console.error(`[bot] hill report: failed to fetch data — ${err.message}`);
+    throw err;
+  }
 
-  console.log(`[bot] hill report: ${data.votes.length} vote(s), ${data.bills.length} bill(s), ${thread.length} tweet(s)`);
+  console.log(`[bot] hill report: ${data.votes.length} vote(s), ${data.bills.length} bill(s) found for ${date}`);
+
+  const thread = formatHillReport(data);
+  console.log(`[bot] hill report: generating ${thread.length} tweet(s)…`);
+
   await postThread(thread);
   markHillReportPosted(date);
   console.log(`[bot] hill report posted for ${date}`);

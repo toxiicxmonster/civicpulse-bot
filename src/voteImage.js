@@ -111,8 +111,8 @@ function drawPanel(ctx, label, accentColor, voters, panelX, bodyY, panelW) {
 
 function generateVoteImage(vote) {
   const panelW = Math.floor(IMG_W / 2);
-  const rBodyH = panelBodyHeight(vote.republicans);
-  const dBodyH = panelBodyHeight(vote.democrats);
+  const rBodyH = panelBodyHeight(vote.republicans || []);
+  const dBodyH = panelBodyHeight(vote.democrats   || []);
   const HEADER = 140;
   const IMG_H  = HEADER + Math.max(rBodyH, dBodyH) + PAD;
 
@@ -151,8 +151,8 @@ function generateVoteImage(vote) {
   ctx.fillStyle = C.border;
   ctx.fillRect(panelW, HEADER, 2, IMG_H - HEADER);
 
-  drawPanel(ctx, 'REPUBLICANS', C.rep, vote.republicans, 0,      HEADER, panelW);
-  drawPanel(ctx, 'DEMOCRATS',   C.dem, vote.democrats,   panelW, HEADER, panelW);
+  drawPanel(ctx, 'REPUBLICANS', C.rep, vote.republicans || [], 0,      HEADER, panelW);
+  drawPanel(ctx, 'DEMOCRATS',   C.dem, vote.democrats   || [], panelW, HEADER, panelW);
 
   return canvas.toBuffer('image/png');
 }

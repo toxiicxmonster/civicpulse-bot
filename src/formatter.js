@@ -117,12 +117,14 @@ function formatVoteSummary(vote, { imageReply = true } = {}) {
   const label  = vote.billId || vote.chamber;
 
   // Party breakdown lines
-  const rYea = vote.republicans.filter(v => isYea(v)).length;
-  const rNay = vote.republicans.filter(v => isNay(v)).length;
-  const rAbs = vote.republicans.length - rYea - rNay;
-  const dYea = vote.democrats.filter(v => isYea(v)).length;
-  const dNay = vote.democrats.filter(v => isNay(v)).length;
-  const dAbs = vote.democrats.length - dYea - dNay;
+  const reps = vote.republicans || [];
+  const dems = vote.democrats   || [];
+  const rYea = reps.filter(v => isYea(v)).length;
+  const rNay = reps.filter(v => isNay(v)).length;
+  const rAbs = reps.length - rYea - rNay;
+  const dYea = dems.filter(v => isYea(v)).length;
+  const dNay = dems.filter(v => isNay(v)).length;
+  const dAbs = dems.length - dYea - dNay;
 
   const partyLines = `🐘 R: ✅ ${rYea}  ❌ ${rNay}  ⬜ ${rAbs}\n🫏 D: ✅ ${dYea}  ❌ ${dNay}  ⬜ ${dAbs}`;
   const popLine    = vote.population
