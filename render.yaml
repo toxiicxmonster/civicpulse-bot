@@ -12,6 +12,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: TZ
+        value: America/New_York
       - key: DATA_DIR
         value: /data
       - key: POLL_INTERVAL_MINUTES

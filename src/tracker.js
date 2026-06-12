@@ -6,16 +6,17 @@ const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'posted.json');
 
 function load() {
-  if (!fs.existsSync(STATE_FILE)) return { bills: [], votes: [], presidentialActions: [], executiveOrders: [], lastVoteDate: null, inRecess: false };
+  if (!fs.existsSync(STATE_FILE)) return { bills: [], votes: [], presidentialActions: [], executiveOrders: [], hillReports: [], lastVoteDate: null, inRecess: false };
   try {
     const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
     if (!s.lastVoteDate)          s.lastVoteDate          = null;
     if (s.inRecess === undefined) s.inRecess               = false;
     if (!s.presidentialActions)   s.presidentialActions    = [];
     if (!s.executiveOrders)       s.executiveOrders        = [];
+    if (!s.hillReports)           s.hillReports            = [];
     return s;
   }
-  catch { return { bills: [], votes: [], presidentialActions: [], executiveOrders: [], lastVoteDate: null, inRecess: false }; }
+  catch { return { bills: [], votes: [], presidentialActions: [], executiveOrders: [], hillReports: [], lastVoteDate: null, inRecess: false }; }
 }
 
 function save(state) {
@@ -53,6 +54,14 @@ function markEOPosted(id) {
   save(s);
 }
 
+function hasPostedHillReport(date) { return (load().hillReports || []).includes(String(date)); }
+
+function markHillReportPosted(date) {
+  const s = load();
+  s.hillReports = [...new Set([...(s.hillReports || []), String(date)])].slice(-365);
+  save(s);
+}
+
 function getLastVoteDate() { return load().lastVoteDate; }
 function isInRecess()      { return load().inRecess; }
 
@@ -73,6 +82,7 @@ module.exports = {
   hasPostedVote, markVotePosted,
   hasPostedPresidentialAction, markPresidentialActionPosted,
   hasPostedEO, markEOPosted,
+  hasPostedHillReport, markHillReportPosted,
   getLastVoteDate, markLastVoteDate,
   isInRecess, setRecessState,
 };

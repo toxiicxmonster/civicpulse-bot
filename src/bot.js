@@ -3,10 +3,10 @@ require('dotenv').config();
 
 const cron = require('node-cron');
 
-const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getCongressStatus } = require('./checker');
-const { formatBillThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost } = require('./formatter');
+const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getCongressStatus, getHillReportData } = require('./checker');
+const { formatBillThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport } = require('./formatter');
 const { postThread, postVoteThread }                                                                  = require('./xpost');
-const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState } = require('./tracker');
+const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState, hasPostedHillReport, markHillReportPosted } = require('./tracker');
 const { generateVoteImage }                                                             = require('./voteImage');
 
 const VOTE_IMAGE = process.env.VOTE_IMAGE !== 'false';
@@ -125,6 +125,24 @@ async function runOnce() {
   }
 }
 
+// ─── Hill Report ─────────────────────────────────────────────────────────────
+
+async function runHillReport(date = new Date().toISOString().split('T')[0], force = false) {
+  if (!force && hasPostedHillReport(date)) {
+    console.log(`[bot] hill report already posted for ${date} — skipping (use --force to override)`);
+    return;
+  }
+
+  console.log(`[bot] building Hill Report for ${date}…`);
+  const data   = await getHillReportData(date);
+  const thread = formatHillReport(data);
+
+  console.log(`[bot] hill report: ${data.votes.length} vote(s), ${data.bills.length} bill(s), ${thread.length} tweet(s)`);
+  await postThread(thread);
+  markHillReportPosted(date);
+  console.log(`[bot] hill report posted for ${date}`);
+}
+
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 process.on('uncaughtException', (err) => {
@@ -141,24 +159,38 @@ if (process.argv.includes('--single-run')) {
     .then(() => { console.log('[bot] done'); process.exit(0); })
     .catch(err => { console.error('[bot] fatal:', err); process.exit(1); });
 
+} else if (process.argv.includes('--hill-report')) {
+  // Usage:
+  //   node src/bot.js --hill-report
+  //   node src/bot.js --hill-report --date 2026-06-10
+  //   node src/bot.js --hill-report --force
+  const args  = process.argv.slice(2);
+  const dIdx  = args.indexOf('--date');
+  const date  = dIdx !== -1 ? args[dIdx + 1] : new Date().toISOString().split('T')[0];
+  const force = args.includes('--force');
+
+  runHillReport(date, force)
+    .then(() => { console.log('[bot] done'); process.exit(0); })
+    .catch(err => { console.error('[bot] fatal:', err); process.exit(1); });
+
 } else if (process.argv.includes('--post-status')) {
   // Usage:
   //   node src/bot.js --post-status
   //   node src/bot.js --post-status --return-date "July 7, 2026"
   //
-  // Status (in session / adjourned) is determined from the Daily Congressional
-  // Record API. Return date is not available via API — pass --return-date if known.
-  const args       = process.argv.slice(2);
-  const rdIdx      = args.indexOf('--return-date');
-  const returnDate = rdIdx !== -1 ? args[rdIdx + 1] : null;
+  // Status is fetched from the Senate's published schedule XML. Return date is
+  // derived automatically when in recess; --return-date overrides it if needed.
+  const args            = process.argv.slice(2);
+  const rdIdx           = args.indexOf('--return-date');
+  const manualReturnDate = rdIdx !== -1 ? args[rdIdx + 1] : null;
 
   (async () => {
     try {
-      console.log('[bot] fetching Congress status from Congressional Record API…');
-      const { inSession, lastSessionDate } = await getCongressStatus();
-      const inRecess = !inSession;
-      console.log(`[bot] status: ${inSession ? 'in session' : 'adjourned'} (last record: ${lastSessionDate})`);
-      if (returnDate) console.log(`[bot] return date override: ${returnDate}`);
+      console.log('[bot] fetching Congress status from Senate schedule…');
+      const { inSession, returnDate: scheduleReturnDate } = await getCongressStatus();
+      const inRecess   = !inSession;
+      const returnDate = manualReturnDate || scheduleReturnDate;
+      console.log(`[bot] status: ${inSession ? 'in session' : 'adjourned'}${returnDate ? ` — return: ${returnDate}` : ''}`);
 
       await postThread([formatSessionStatusPost(inRecess, returnDate)]);
       setRecessState(inRecess);
@@ -175,11 +207,21 @@ if (process.argv.includes('--single-run')) {
   const pollMins = Math.min(59, Math.max(1, parseInt(process.env.POLL_INTERVAL_MINUTES, 10) || 15));
   const cronExpr = `*/${pollMins} * * * *`;
 
+  // Daily Hill Report fires at midnight local time — TZ=America/New_York must be set on the server
+  const hillCronExpr = '0 0 * * *';
+
   console.log(`[bot] starting — polling every ${pollMins} min (cron: "${cronExpr}")`);
+  console.log(`[bot] hill report — daily at midnight local time (TZ=${process.env.TZ || 'system default'})`);
 
   // Fire immediately on startup, then on schedule
   runOnce().catch(err => console.error('[bot] run error:', err));
   cron.schedule(cronExpr, () => runOnce().catch(err => console.error('[bot] run error:', err)));
+  cron.schedule(hillCronExpr, () => {
+    // Use local date so the report reflects the day that just ended in ET
+    const d     = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    runHillReport(today).catch(err => console.error('[bot] hill report error:', err));
+  });
 
   process.on('SIGTERM', () => {
     console.log('[bot] SIGTERM received — shutting down');

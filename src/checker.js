@@ -331,24 +331,62 @@ async function getAdjournmentUpdate(newVoteDates) {
 }
 
 // ─── getCongressStatus ────────────────────────────────────────────────────────
-// Uses the Daily Congressional Record as the signal: Congress publishes a record
-// every day they are in session. A gap >= RECESS_THRESHOLD_DAYS means recess.
+// Combines two signals:
+//   1. Senate schedule XML  — planned session vs. State Work Period (recess)
+//   2. Recent vote activity — detects emergency sessions (votes during a planned
+//      recess) and early adjournments (no votes despite a scheduled session)
+//
+// Override matrix:
+//   schedule=session  + recent votes    → in session
+//   schedule=session  + no recent votes → trust schedule (committee work, etc.)
+//   schedule=recess   + recent votes    → emergency session → override to in session
+//   schedule=recess   + no recent votes → adjourned, return date from XML
+
+function addOneDay(isoDate) {
+  const d = new Date(isoDate + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().split('T')[0];
+}
+
+async function fetchSenateScheduleStatus() {
+  const year = new Date().getFullYear();
+  const url  = `https://www.senate.gov/legislative/${year}_schedule.xml`;
+  const xml  = String((await axios.get(url, { timeout: 12000 })).data);
+  const today = new Date().toISOString().split('T')[0];
+
+  for (const block of xml.matchAll(/<date>([\s\S]*?)<\/date>/gi)) {
+    const inner  = block[1];
+    const begin  = xmlTag(inner, 'beginDate');
+    const end    = xmlTag(inner, 'endDate');
+    const action = xmlTag(inner, 'action');
+    if (action !== 'State Work Period') continue;
+    if (today >= begin && today <= end) {
+      const returnIso  = addOneDay(end);
+      const returnDate = new Date(returnIso + 'T12:00:00Z')
+        .toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+      return { inSession: false, returnDate };
+    }
+  }
+
+  return { inSession: true, returnDate: null };
+}
 
 async function getCongressStatus() {
-  // sort=issueDate+desc must stay as a literal + to avoid %2B rejection
-  const url  = `${CONGRESS_BASE}/daily-congressional-record?api_key=${key()}&sort=issueDate+desc&limit=1&format=json`;
-  const data = (await axios.get(url, { timeout: 12000 })).data;
-  const issues = data.dailyCongressionalRecord || [];
-  if (!issues.length) throw new Error('no Congressional Record data returned');
+  const [schedule, recentVotes] = await Promise.all([
+    fetchSenateScheduleStatus(),
+    fetchRecentVotes(5),
+  ]);
 
-  const lastDate  = issues[0].issueDate;
-  const today     = new Date().toISOString().split('T')[0];
-  const daysSince = Math.floor((new Date(today) - new Date(lastDate)) / 86400000);
+  const cutoffStr = cutoff(RECESS_THRESHOLD_DAYS);
+  const hasRecentActivity = recentVotes.some(v => (v.created || '').slice(0, 10) >= cutoffStr);
 
-  return {
-    inSession:       daysSince < RECESS_THRESHOLD_DAYS,
-    lastSessionDate: lastDate,
-  };
+  // Emergency session: schedule says recess but votes are happening
+  if (!schedule.inSession && hasRecentActivity) {
+    console.log('[checker] emergency session detected — overriding schedule');
+    return { inSession: true, returnDate: null };
+  }
+
+  return schedule;
 }
 
 // ─── Test helpers (bypass tracker, return exactly one result) ────────────────
@@ -504,4 +542,49 @@ async function getExecutiveOrders() {
   return result;
 }
 
-module.exports = { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getCongressStatus, getLatestVote, getLatestBill };
+// ─── getHillReportData ────────────────────────────────────────────────────────
+// Returns all votes cast and bills introduced on a given date (YYYY-MM-DD).
+// Does NOT consult the dedup tracker — the caller decides whether to post.
+
+async function getHillReportData(date = new Date().toISOString().split('T')[0]) {
+  const [rawVotes, rawBills] = await Promise.all([
+    fetchRecentVotes(50),
+    fetchRecentBills(50),
+  ]);
+
+  // GovTrack vote objects include a `created` ISO timestamp; filter to today
+  const votes = rawVotes
+    .filter(v => v.result !== null && v.result !== undefined && (v.created || '').startsWith(date))
+    .map(v => {
+      const ch      = v.chamber === 'senate' ? 'SENATE' : 'HOUSE';
+      const didPass = v.passed === true || /pass|agree|adopt|approv/i.test(String(v.result || ''));
+      const rb      = v.related_bill;
+      const { parsedBillId, parsedUrl } = parseBillFromQuestion(v.question || '', v.congress);
+      const url = (rb?.congress != null && rb?.bill_number != null)
+        ? billUrl(rb.congress, (rb.bill_type || '').toLowerCase(), rb.bill_number)
+        : parsedUrl;
+      return { chamber: ch, billId: parsedBillId, question: v.question || 'Procedural Vote', passed: didPass, url };
+    });
+
+  // Bills whose first action matches today — verify introducedDate via detail
+  const candidates = rawBills.filter(b => (b.latestAction?.actionDate || '') >= date);
+  const bills = [];
+  for (const bill of candidates) {
+    const congress = bill.congress;
+    const type     = (bill.type || '').toLowerCase();
+    const number   = bill.number;
+    try {
+      const detail = await fetchBillDetail(congress, type, number);
+      if (!detail || detail.introducedDate !== date) continue;
+      bills.push({
+        billId: billId(type, number),
+        title:  detail.title || bill.title || 'Untitled',
+        url:    billUrl(congress, type, number),
+      });
+    } catch { continue; }
+  }
+
+  return { date, votes, bills };
+}
+
+module.exports = { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getCongressStatus, getLatestVote, getLatestBill, getHillReportData };
