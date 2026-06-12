@@ -5,24 +5,26 @@ const MAX = 278; // leave a 2-char buffer under X's 280-character post limit
 // ─── Hashtag generation ─────────────────────────────────────────────────────
 
 const HASHTAG_MAP = [
-  [/\b(health\s?care|medicare|medicaid|aca|affordable care|insurance|prescription|drug\s?price)/i, ['#Healthcare', '#Medicare']],
-  [/\b(tax(es|ation)?|irs|revenue|deduction|fiscal|tariff)/i,                                       ['#TaxReform', '#Taxes']],
-  [/\b(climate|environment|emission|clean energy|renewable|fossil fuel|epa)/i,                      ['#Climate', '#CleanEnergy']],
-  [/\b(immigra|border|asylum|visa|deporta|daca|undocumented)/i,                                      ['#Immigration', '#BorderSecurity']],
-  [/\b(defense|military|armed forces|pentagon|nato|national security|weapon)/i,                     ['#Defense', '#NationalSecurity']],
-  [/\b(veteran|va benefit|gi bill|service member)/i,                                                ['#Veterans']],
-  [/\b(education|school|student loan|college|university|teacher)/i,                                 ['#Education']],
-  [/\b(infrastructure|highway|bridge|transit|broadband|water system)/i,                             ['#Infrastructure']],
-  [/\b(housing|rent|mortgage|homeless|affordable housing)/i,                                        ['#Housing']],
-  [/\b(social security|disability|retirement|pension|elder|aging)/i,                               ['#SocialSecurity']],
-  [/\b(child(ren)?|family|daycare|childcare|maternity|paternity)/i,                                ['#FamilyPolicy']],
-  [/\b(gun|firearm|second amendment|weapon|background check|rifle)/i,                              ['#GunControl', '#SecondAmendment']],
-  [/\b(police|law enforcement|criminal justice|prison|sentencing|parole)/i,                        ['#CriminalJustice']],
-  [/\b(election|voting right|ballot|campaign finance|gerrymandering)/i,                            ['#VotingRights']],
-  [/\b(agriculture|farm|crop|livestock|rural|usda)/i,                                              ['#Agriculture']],
-  [/\b(trade|export|import|wto|nafta|usmca|sanction)/i,                                            ['#Trade']],
-  [/\b(tech(nology)?|artificial intelligence|ai|data privacy|cybersecurity|internet)/i,            ['#Technology', '#AI']],
-  [/\b(small business|entrepreneur|startup|sba)/i,                                                 ['#SmallBusiness']],
+  [/\b(health\s?care|medicare|medicaid|aca|affordable care|health insurance|prescription|drug\s?price)/i, ['#Healthcare', '#Medicare']],
+  [/\b(public health|health awareness|health disparit|health equity|disease prevention|epidemic|pandemic)/i, ['#PublicHealth']],
+  [/\b(heat wave|extreme heat|heat|temperature|weather emergency|wildfire|drought|flood|disaster prep)/i, ['#ClimateChange', '#ExtremeHeat']],
+  [/\b(tax(es|ation)?|irs|revenue|deduction|fiscal|tariff)/i,                                         ['#TaxReform', '#Taxes']],
+  [/\b(climate change|environment|emission|clean energy|renewable|fossil fuel|epa)/i,                 ['#Climate', '#CleanEnergy']],
+  [/\b(immigra|border|asylum|visa|deporta|daca|undocumented)/i,                                        ['#Immigration', '#BorderSecurity']],
+  [/\b(defense|military|armed forces|pentagon|nato|national security)/i,                              ['#Defense', '#NationalSecurity']],
+  [/\b(veteran|va benefit|gi bill|service member)/i,                                                  ['#Veterans']],
+  [/\b(education|school|student loan|college|university|teacher)/i,                                   ['#Education']],
+  [/\b(infrastructure|highway|bridge|transit|broadband|water infrastructure|water treatment)/i,       ['#Infrastructure']],
+  [/\b(housing|rent|mortgage|homeless|affordable housing)/i,                                          ['#Housing']],
+  [/\b(social security|disability|retirement|pension|elder|aging)/i,                                 ['#SocialSecurity']],
+  [/\b(child(ren)?|family|daycare|childcare|maternity|paternity)/i,                                  ['#FamilyPolicy']],
+  [/\b(gun|firearm|second amendment|background check|rifle)/i,                                       ['#GunControl', '#SecondAmendment']],
+  [/\b(police|law enforcement|criminal justice|prison|sentencing|parole)/i,                          ['#CriminalJustice']],
+  [/\b(election|voting right|ballot|campaign finance|gerrymandering)/i,                              ['#VotingRights']],
+  [/\b(agriculture|farming|crop|livestock|usda|farm bill)/i,                                         ['#Agriculture']],
+  [/\b(trade|export|import|wto|nafta|usmca|sanction)/i,                                              ['#Trade']],
+  [/\b(tech(nology)?|artificial intelligence|ai|data privacy|cybersecurity|internet)/i,              ['#Technology', '#AI']],
+  [/\b(small business|entrepreneur|startup|sba)/i,                                                   ['#SmallBusiness']],
 ];
 
 // Returns up to maxTags unique bill-specific hashtags based on title and synopsis.
@@ -46,7 +48,17 @@ function generateHashtags(title = '', synopsis = '', subjects = [], maxTags = 5)
 function trunc(str, maxLen) {
   if (!str) return '';
   const s = str.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  return s.length <= maxLen ? s : s.slice(0, maxLen - 1) + '…';
+  if (s.length <= maxLen) return s;
+  const raw = s.slice(0, maxLen - 1);
+  // Prefer ending at a complete sentence
+  const sentenceEnd = raw.match(/^[\s\S]*[.!?](?=\s|$)/);
+  if (sentenceEnd && sentenceEnd[0].trimEnd().length > maxLen * 0.6) {
+    return sentenceEnd[0].trimEnd();
+  }
+  // Fall back to word boundary
+  const lastSpace = raw.lastIndexOf(' ');
+  if (lastSpace > maxLen / 2) return raw.slice(0, lastSpace) + '…';
+  return raw + '…';
 }
 
 function isYea(voter) {
@@ -117,11 +129,12 @@ function buildPartyTweets(emoji, partyLabel, voteLabel, voters, chamber, lastSuf
 function formatBillThread(bill) {
   const tweets = [];
 
-  // Tweet 1 — bill name as the headline
+  // Tweet 1 — bill name as the headline with link
   const dynamicTags = generateHashtags(bill.title, bill.synopsis, bill.subjects || []);
   const hashtags  = ['#CivicPulse', '#Congress', '#NewBill', ...dynamicTags].join(' ');
   const header    = `📜 NEW BILL INTRODUCED\n\n${bill.billId}`;
-  const suffix    = `\n\n${hashtags}`;
+  const linkLine  = bill.url ? `\n\n📖 ${bill.url}` : '';
+  const suffix    = `${linkLine}\n\n${hashtags}`;
   const available = MAX - header.length - suffix.length - 2; // \n\n before title
   const title     = trunc(bill.title, Math.max(60, available));
   tweets.push(`${header}\n\n${title}${suffix}`);
