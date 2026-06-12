@@ -127,6 +127,13 @@ async function runOnce() {
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
+process.on('uncaughtException', (err) => {
+  console.error('[bot] uncaught exception:', err);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('[bot] unhandled rejection:', err);
+});
+
 validateEnv();
 
 if (process.argv.includes('--single-run')) {

@@ -1,5 +1,7 @@
 {
   "bills": [],
+  "presidentialActions": [],
+  "executiveOrders": [],
   "votes": [
     "vote:119-2026-S-170",
     "vote:119-2026-H-219",
