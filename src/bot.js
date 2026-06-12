@@ -4,7 +4,7 @@ require('dotenv').config();
 const cron = require('node-cron');
 
 const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getCongressStatus, getHillReportData } = require('./checker');
-const { formatBillThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport } = require('./formatter');
+const { formatBillThread, formatVoteSummary, formatVoteQuestion, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport } = require('./formatter');
 const { postThread, postVoteThread }                                                                  = require('./xpost');
 const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState, hasPostedHillReport, markHillReportPosted } = require('./tracker');
 const { generateVoteImage }                                                             = require('./voteImage');
@@ -65,16 +65,13 @@ async function runOnce() {
     }
   }
 
-  // ── Votes: summary tweet (+ image reply if VOTE_IMAGE=true) ─────────────────
+  // ── Votes: main post with image + question reply ─────────────────────────────
   for (const vote of newVotes) {
     try {
-      const summary = formatVoteSummary(vote, { imageReply: VOTE_IMAGE });
-      if (VOTE_IMAGE) {
-        const image = generateVoteImage(vote);
-        await postVoteThread(summary, image);
-      } else {
-        await postThread([summary]);
-      }
+      const summary  = formatVoteSummary(vote);
+      const question = formatVoteQuestion(vote);
+      const image    = VOTE_IMAGE ? generateVoteImage(vote) : null;
+      await postVoteThread(summary, image, { questionText: question });
       markVotePosted(vote.trackingId);
       console.log(`[bot] posted vote ${vote.voteId}`);
     } catch (err) {

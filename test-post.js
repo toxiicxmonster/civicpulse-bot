@@ -10,7 +10,7 @@
 require('dotenv').config();
 
 const { getLatestVote, getLatestBill }               = require('./src/checker');
-const { formatBillThread, formatVoteSummary }         = require('./src/formatter');
+const { formatBillThread, formatVoteSummary, formatVoteQuestion } = require('./src/formatter');
 const { postThread, postVoteThread, xEnabled, bskyEnabled } = require('./src/xpost');
 const { generateVoteImage }                           = require('./src/voteImage');
 
@@ -53,12 +53,10 @@ async function main() {
   if (!vote) { console.error('[test-post] no vote found'); process.exit(1); }
 
   console.log(`[test-post] posting vote: ${vote.voteId} — ${vote.question.slice(0, 60)}`);
-  const summary = formatVoteSummary(vote, { imageReply: VOTE_IMAGE });
-  if (VOTE_IMAGE) {
-    await postVoteThread(summary, generateVoteImage(vote), { platform });
-  } else {
-    await postThread([summary], { platform });
-  }
+  const summary  = formatVoteSummary(vote);
+  const question = formatVoteQuestion(vote);
+  const image    = VOTE_IMAGE ? generateVoteImage(vote) : null;
+  await postVoteThread(summary, image, { platform, questionText: question });
   console.log('[test-post] vote posted ✓\n');
 
   // ── 2. Bill (30-day window) ────────────────────────────────────────────────

@@ -2,6 +2,45 @@
 
 const MAX = 278; // leave a 2-char buffer under X's 280-character post limit
 
+// ─── Hashtag generation ─────────────────────────────────────────────────────
+
+const HASHTAG_MAP = [
+  [/\b(health\s?care|medicare|medicaid|aca|affordable care|insurance|prescription|drug\s?price)/i, ['#Healthcare', '#Medicare']],
+  [/\b(tax(es|ation)?|irs|revenue|deduction|fiscal|tariff)/i,                                       ['#TaxReform', '#Taxes']],
+  [/\b(climate|environment|emission|clean energy|renewable|fossil fuel|epa)/i,                      ['#Climate', '#CleanEnergy']],
+  [/\b(immigra|border|asylum|visa|deporta|daca|undocumented)/i,                                      ['#Immigration', '#BorderSecurity']],
+  [/\b(defense|military|armed forces|pentagon|nato|national security|weapon)/i,                     ['#Defense', '#NationalSecurity']],
+  [/\b(veteran|va benefit|gi bill|service member)/i,                                                ['#Veterans']],
+  [/\b(education|school|student loan|college|university|teacher)/i,                                 ['#Education']],
+  [/\b(infrastructure|highway|bridge|transit|broadband|water system)/i,                             ['#Infrastructure']],
+  [/\b(housing|rent|mortgage|homeless|affordable housing)/i,                                        ['#Housing']],
+  [/\b(social security|disability|retirement|pension|elder|aging)/i,                               ['#SocialSecurity']],
+  [/\b(child(ren)?|family|daycare|childcare|maternity|paternity)/i,                                ['#FamilyPolicy']],
+  [/\b(gun|firearm|second amendment|weapon|background check|rifle)/i,                              ['#GunControl', '#SecondAmendment']],
+  [/\b(police|law enforcement|criminal justice|prison|sentencing|parole)/i,                        ['#CriminalJustice']],
+  [/\b(election|voting right|ballot|campaign finance|gerrymandering)/i,                            ['#VotingRights']],
+  [/\b(agriculture|farm|crop|livestock|rural|usda)/i,                                              ['#Agriculture']],
+  [/\b(trade|export|import|wto|nafta|usmca|sanction)/i,                                            ['#Trade']],
+  [/\b(tech(nology)?|artificial intelligence|ai|data privacy|cybersecurity|internet)/i,            ['#Technology', '#AI']],
+  [/\b(small business|entrepreneur|startup|sba)/i,                                                 ['#SmallBusiness']],
+];
+
+// Returns up to maxTags unique bill-specific hashtags based on title and synopsis.
+function generateHashtags(title = '', synopsis = '', subjects = [], maxTags = 5) {
+  const text = [title, synopsis, ...subjects].join(' ');
+  const seen = new Set();
+  const tags = [];
+  for (const [re, candidates] of HASHTAG_MAP) {
+    if (re.test(text)) {
+      for (const tag of candidates) {
+        if (!seen.has(tag)) { seen.add(tag); tags.push(tag); }
+        if (tags.length >= maxTags) return tags;
+      }
+    }
+  }
+  return tags;
+}
+
 // ─── Utilities ──────────────────────────────────────────────────────────────
 
 function trunc(str, maxLen) {
@@ -78,17 +117,23 @@ function buildPartyTweets(emoji, partyLabel, voteLabel, voters, chamber, lastSuf
 function formatBillThread(bill) {
   const tweets = [];
 
-  // Tweet 1 — NEW BILL INTRODUCED
-  const hashtags  = '#CivicPulse #Congress #NewBill';
-  const billLine  = `${bill.billId} — ${trunc(bill.title, 55)}`;
-  const prefix    = `📜 NEW BILL INTRODUCED\n\n${billLine}\n\n📋 Synopsis:\n`;
+  // Tweet 1 — bill name as the headline
+  const dynamicTags = generateHashtags(bill.title, bill.synopsis, bill.subjects || []);
+  const hashtags  = ['#CivicPulse', '#Congress', '#NewBill', ...dynamicTags].join(' ');
+  const header    = `📜 NEW BILL INTRODUCED\n\n${bill.billId}`;
   const suffix    = `\n\n${hashtags}`;
-  const available = MAX - prefix.length - suffix.length;
-  const synopsis  = trunc(bill.synopsis || bill.title, Math.max(30, available));
+  const available = MAX - header.length - suffix.length - 2; // \n\n before title
+  const title     = trunc(bill.title, Math.max(60, available));
+  tweets.push(`${header}\n\n${title}${suffix}`);
 
-  tweets.push(prefix + synopsis + suffix);
+  // Tweet 2 — synopsis (if available)
+  if (bill.synopsis) {
+    const synopsisHeader = `📋 SYNOPSIS — ${bill.billId}\n\n`;
+    const synopsis = trunc(bill.synopsis, Math.max(60, MAX - synopsisHeader.length));
+    tweets.push(`${synopsisHeader}${synopsis}`);
+  }
 
-  // Tweet 2 — Sponsors + link
+  // Tweet 3 — sponsors + link
   const sponsorHeader  = `👥 SPONSORS — ${bill.billId}\n\n`;
   const linkBlock      = `\n\n📖 Read the full bill:\n${bill.url}\n\n#CivicPulse`;
   const availableForNames = MAX - sponsorHeader.length - linkBlock.length;
@@ -106,17 +151,15 @@ function formatBillThread(bill) {
 }
 
 // ─── Vote summary tweet (main post) ──────────────────────────────────────────
-// Returns a single string. Party totals are inlined; the image reply is handled
-// separately in bot.js via voteImage.js.
+// Bill name is the headline; question/synopsis goes to a reply via formatVoteQuestion.
 
-function formatVoteSummary(vote, { imageReply = true } = {}) {
+function formatVoteSummary(vote) {
   const t      = vote.totals || {};
   const yea    = t.Yea   ?? 0;
   const nay    = t.Nay   ?? 0;
   const absent = (t['Not Voting'] ?? 0) + (t.Present ?? 0);
   const label  = vote.billId || vote.chamber;
 
-  // Party breakdown lines
   const reps = vote.republicans || [];
   const dems = vote.democrats   || [];
   const rYea = reps.filter(v => isYea(v)).length;
@@ -131,16 +174,15 @@ function formatVoteSummary(vote, { imageReply = true } = {}) {
     ? `\n👥 Pop. represented: ✅ ${vote.population.yeaPct}%  ❌ ${vote.population.nayPct}%`
     : '';
   const urlLine    = vote.url ? `\n\n📖 Read the full bill:\n${vote.url}` : '';
-  const breakdownRef = imageReply ? '\n\n📊 Breakdown → reply' : '';
-  const footer     = `\n\n${partyLines}${popLine}${breakdownRef}\n\n#CivicPulse #Congress`;
   const counts     = `${vote.resultEmoji} ${vote.result}\nYEA: ${yea} | NAY: ${nay} | ABSENT: ${absent}`;
-  const prefix     = `🏛️ VOTE ALERT: ${label}\n\n📋 `;
-  const overhead   = prefix.length + `\n\n${counts}`.length + urlLine.length + footer.length;
 
-  const qLen   = Math.max(30, MAX - overhead);
-  const synopsis = trunc(vote.question, qLen);
+  return `🏛️ VOTE ALERT: ${label}\n\n${counts}\n\n${partyLines}${popLine}${urlLine}\n\n#CivicPulse #Congress`;
+}
 
-  return prefix + synopsis + `\n\n${counts}` + urlLine + footer;
+// Returns the question text for the reply tweet following a vote post.
+function formatVoteQuestion(vote) {
+  const q = trunc(vote.question || 'Procedural Vote', MAX - 5);
+  return `📋 ${q}`;
 }
 
 // Keep formatVoteThread as an alias that returns [summary] for backward compat
@@ -151,23 +193,32 @@ function formatVoteThread(vote) {
 // ─── Presidential action posts ───────────────────────────────────────────────
 
 function formatSignedPost(action) {
-  const lawLine = action.lawNumber ? `\n\nNow ${action.lawNumber}.` : '';
-  const title   = trunc(action.title, 120);
-  const url     = action.url ? `\n\n📖 Read the full bill:\n${action.url}` : '';
-  return `✍️ SIGNED INTO LAW: ${action.billId}\n\n${title}${lawLine}${url}\n\n#CivicPulse #Congress`;
+  const lawLine    = action.lawNumber ? `\n\nNow ${action.lawNumber}.` : '';
+  const url        = action.url ? `\n\n📖 Read the full bill:\n${action.url}` : '';
+  const dynamicTags = generateHashtags(action.title, '', action.subjects || []);
+  const hashtags   = ['#CivicPulse', '#Congress', ...dynamicTags].join(' ');
+  const overhead   = `✍️ SIGNED INTO LAW: ${action.billId}\n\n`.length + lawLine.length + url.length + `\n\n${hashtags}`.length;
+  const title      = trunc(action.title, Math.max(20, MAX - overhead));
+  return `✍️ SIGNED INTO LAW: ${action.billId}\n\n${title}${lawLine}${url}\n\n${hashtags}`;
 }
 
 function formatVetoedPost(action) {
-  const title = trunc(action.title, 100);
-  const url   = action.url ? `\n\n📖 Read the full bill:\n${action.url}` : '';
-  return `🚫 VETOED: ${action.billId}\n\n${title}\n\nThe President has vetoed this bill. Congress may attempt an override with a 2/3 majority.${url}\n\n#CivicPulse #Congress`;
+  const url        = action.url ? `\n\n📖 Read the full bill:\n${action.url}` : '';
+  const override   = '\n\nThe President has vetoed this bill. Congress may attempt an override with a 2/3 majority.';
+  const dynamicTags = generateHashtags(action.title, '', action.subjects || []);
+  const hashtags   = ['#CivicPulse', '#Congress', ...dynamicTags].join(' ');
+  const overhead   = `🚫 VETOED: ${action.billId}\n\n`.length + override.length + url.length + `\n\n${hashtags}`.length;
+  const title      = trunc(action.title, Math.max(20, MAX - overhead));
+  return `🚫 VETOED: ${action.billId}\n\n${title}${override}${url}\n\n${hashtags}`;
 }
 
 function formatExecutiveOrderPost(eo) {
-  const title    = trunc(eo.title, 120);
-  const abstract = eo.abstract ? '\n\n' + trunc(eo.abstract, 80) : '';
-  const url      = eo.url ? `\n\n📖 Full text:\n${eo.url}` : '';
-  return `📋 EXECUTIVE ORDER #${eo.number}\n\n${title}${abstract}\n\nSigned: ${eo.signingDate}${url}\n\n#CivicPulse #ExecutiveOrder`;
+  const dynamicTags = generateHashtags(eo.title, eo.abstract || '');
+  const hashtags    = ['#CivicPulse', '#ExecutiveOrder', ...dynamicTags].join(' ');
+  const url         = eo.url ? `\n\n📖 Full text:\n${eo.url}` : '';
+  const abstract    = eo.abstract ? '\n\n' + trunc(eo.abstract, 80) : '';
+  const title       = trunc(eo.title, 120);
+  return `📋 EXECUTIVE ORDER #${eo.number}\n\n${title}${abstract}\n\nSigned: ${eo.signingDate}${url}\n\n${hashtags}`;
 }
 
 // ─── Session status post (manual / forced) ───────────────────────────────────
@@ -248,4 +299,4 @@ function formatHillReport({ date, votes, bills }) {
   return tweets;
 }
 
-module.exports = { formatBillThread, formatVoteThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport };
+module.exports = { formatBillThread, formatVoteThread, formatVoteSummary, formatVoteQuestion, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport };

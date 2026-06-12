@@ -23,14 +23,19 @@ async function xPostThread(posts) {
   console.log('[xpost] posted thread to X');
 }
 
-async function xPostVoteThread(summaryText, imageBuffer) {
+async function xPostVoteThread(summaryText, imageBuffer, questionText = null) {
   // Embed image directly in the post — X Basic does not allow media in reply tweets
-  const text = summaryText.replace('\n\n📊 Breakdown → reply', '');
+  let mainId;
   if (imageBuffer) {
     const mediaId = await xClient().v1.uploadMedia(imageBuffer, { mimeType: 'image/png' });
-    await xClient().v2.tweet({ text, media: { media_ids: [mediaId] } });
+    const res = await xClient().v2.tweet({ text: summaryText, media: { media_ids: [mediaId] } });
+    mainId = res.data.id;
   } else {
-    await xClient().v2.tweet(text);
+    const res = await xClient().v2.tweet(summaryText);
+    mainId = res.data.id;
+  }
+  if (questionText && mainId) {
+    await xClient().v2.tweet({ text: questionText, reply: { in_reply_to_tweet_id: mainId } });
   }
   console.log('[xpost] posted vote to X');
 }
@@ -138,15 +143,19 @@ async function bskyPostThread(posts) {
   console.log('[xpost] posted thread to Bluesky');
 }
 
-async function bskyPostVoteThread(summaryText, imageBuffer) {
-  // On Bluesky the image embeds directly in the post — strip the "→ reply" hint
-  const text = summaryText.replace('\n\n📊 Breakdown → reply', '');
-  let embed  = null;
-  if (imageBuffer) {
-    const blob = await bskyUploadBlob(imageBuffer);
-    embed = { '$type': 'app.bsky.embed.images', images: [{ image: blob, alt: 'Full member vote breakdown' }] };
-  }
-  await bskyRequest(sess => bskyCreatePost(sess, text, null, embed));
+async function bskyPostVoteThread(summaryText, imageBuffer, questionText = null) {
+  await bskyRequest(async (sess) => {
+    let embed = null;
+    if (imageBuffer) {
+      const blob = await bskyUploadBlob(imageBuffer);
+      embed = { '$type': 'app.bsky.embed.images', images: [{ image: blob, alt: 'Full member vote breakdown' }] };
+    }
+    const mainRef = await bskyCreatePost(sess, summaryText, null, embed);
+    if (questionText) {
+      const reply = { root: mainRef, parent: mainRef };
+      await bskyCreatePost(sess, questionText, reply);
+    }
+  });
   console.log('[xpost] posted vote to Bluesky');
 }
 
@@ -184,21 +193,22 @@ async function postThread(posts, { platform = null } = {}) {
   await Promise.all(tasks);
 }
 
-async function postVoteThread(summaryText, imageBuffer, { platform = null } = {}) {
+async function postVoteThread(summaryText, imageBuffer, { platform = null, questionText = null } = {}) {
   if (DRY()) {
     const label = platform ? platform.toUpperCase() : 'all platforms';
     console.log(`\n===== DRY RUN — Vote Thread [${label}] =====`);
-    console.log(`\n[1/2] (${summaryText.length} chars)\n${summaryText}`);
+    console.log(`\n[1] (${summaryText.length} chars)\n${summaryText}`);
     console.log('------------------------------------');
-    if (imageBuffer) console.log(`\n[2/2] [IMAGE ${(imageBuffer.length / 1024).toFixed(0)} KB]`);
+    if (imageBuffer) console.log(`\n[img] [IMAGE ${(imageBuffer.length / 1024).toFixed(0)} KB]`);
+    if (questionText) console.log(`\n[reply] (${questionText.length} chars)\n${questionText}`);
     console.log('------------------------------------');
     return;
   }
 
   const { useX, useBsky } = resolvePlatforms(platform);
   const tasks = [];
-  if (useX)    tasks.push(xPostVoteThread(summaryText, imageBuffer).catch(e    => console.error('[xpost] X error:',       e.message)));
-  if (useBsky) tasks.push(bskyPostVoteThread(summaryText, imageBuffer).catch(e => console.error('[xpost] Bluesky error:', e.message)));
+  if (useX)    tasks.push(xPostVoteThread(summaryText, imageBuffer, questionText).catch(e    => console.error('[xpost] X error:',       e.message)));
+  if (useBsky) tasks.push(bskyPostVoteThread(summaryText, imageBuffer, questionText).catch(e => console.error('[xpost] Bluesky error:', e.message)));
   if (!tasks.length) console.warn('[xpost] no platforms configured — nothing posted');
   await Promise.all(tasks);
 }
