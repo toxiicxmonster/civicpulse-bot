@@ -3,10 +3,10 @@ require('dotenv').config();
 
 const cron = require('node-cron');
 
-const { getNewBills, getNewVotes, getAdjournmentUpdate }                               = require('./checker');
-const { formatBillThread, formatVoteSummary, formatAdjournedPost, formatReturnedPost } = require('./formatter');
-const { postThread, postVoteThread }                                                    = require('./xpost');
-const { markBillPosted, markVotePosted, markLastVoteDate, setRecessState }             = require('./tracker');
+const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate } = require('./checker');
+const { formatBillThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost } = require('./formatter');
+const { postThread, postVoteThread }                                                                  = require('./xpost');
+const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState } = require('./tracker');
 const { generateVoteImage }                                                             = require('./voteImage');
 
 const VOTE_IMAGE = process.env.VOTE_IMAGE !== 'false';
@@ -34,15 +34,21 @@ function validateEnv() {
 async function runOnce() {
   console.log(`[bot] ${new Date().toISOString()} — checking for new bills and votes…`);
 
-  const [bills, votes] = await Promise.allSettled([getNewBills(), getNewVotes()]);
+  const [bills, votes, presidentialActions, executiveOrders] = await Promise.allSettled([
+    getNewBills(), getNewVotes(), getPresidentialActions(), getExecutiveOrders(),
+  ]);
 
-  const newBills = bills.status === 'fulfilled' ? bills.value : [];
-  const newVotes = votes.status === 'fulfilled' ? votes.value : [];
+  const newBills              = bills.status              === 'fulfilled' ? bills.value              : [];
+  const newVotes              = votes.status              === 'fulfilled' ? votes.value              : [];
+  const newPresidentialActions = presidentialActions.status === 'fulfilled' ? presidentialActions.value : [];
+  const newExecutiveOrders    = executiveOrders.status    === 'fulfilled' ? executiveOrders.value    : [];
 
-  if (bills.status === 'rejected') console.error('[bot] bills error:', bills.reason?.message);
-  if (votes.status === 'rejected') console.error('[bot] votes error:', votes.reason?.message);
+  if (bills.status              === 'rejected') console.error('[bot] bills error:',               bills.reason?.message);
+  if (votes.status              === 'rejected') console.error('[bot] votes error:',               votes.reason?.message);
+  if (presidentialActions.status === 'rejected') console.error('[bot] presidential actions error:', presidentialActions.reason?.message);
+  if (executiveOrders.status    === 'rejected') console.error('[bot] executive orders error:',    executiveOrders.reason?.message);
 
-  console.log(`[bot] found ${newBills.length} new bill(s), ${newVotes.length} new vote(s)`);
+  console.log(`[bot] found ${newBills.length} new bill(s), ${newVotes.length} new vote(s), ${newPresidentialActions.length} presidential action(s), ${newExecutiveOrders.length} executive order(s)`);
 
   // ── Bills: text thread ───────────────────────────────────────────────────────
   for (const bill of newBills) {
@@ -69,6 +75,29 @@ async function runOnce() {
       console.log(`[bot] posted vote ${vote.voteId}`);
     } catch (err) {
       console.error(`[bot] failed to post vote ${vote.voteId}:`, err.message);
+    }
+  }
+
+  // ── Presidential actions: signed / vetoed ────────────────────────────────────
+  for (const action of newPresidentialActions) {
+    try {
+      const post = action.action === 'signed' ? formatSignedPost(action) : formatVetoedPost(action);
+      await postThread([post]);
+      markPresidentialActionPosted(action.trackingId);
+      console.log(`[bot] posted presidential action ${action.trackingId}`);
+    } catch (err) {
+      console.error(`[bot] failed to post presidential action ${action.trackingId}:`, err.message);
+    }
+  }
+
+  // ── Executive orders ──────────────────────────────────────────────────────────
+  for (const eo of newExecutiveOrders) {
+    try {
+      await postThread([formatExecutiveOrderPost(eo)]);
+      markEOPosted(eo.trackingId);
+      console.log(`[bot] posted executive order ${eo.number}`);
+    } catch (err) {
+      console.error(`[bot] failed to post executive order ${eo.number}:`, err.message);
     }
   }
 

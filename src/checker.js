@@ -1,6 +1,6 @@
 'use strict';
 const axios = require('axios');
-const { hasPostedBill, hasPostedVote, getLastVoteDate, isInRecess } = require('./tracker');
+const { hasPostedBill, hasPostedVote, hasPostedPresidentialAction, hasPostedEO, getLastVoteDate, isInRecess } = require('./tracker');
 const { calcPopRepresented } = require('./population');
 
 const CONGRESS_BASE = 'https://api.congress.gov/v3';
@@ -401,4 +401,86 @@ async function getLatestBill(days = 30) {
   return null;
 }
 
-module.exports = { getNewBills, getNewVotes, getAdjournmentUpdate, getLatestVote, getLatestBill };
+// ─── getPresidentialActions ───────────────────────────────────────────────────
+
+async function getPresidentialActions() {
+  const raw    = await fetchRecentBills(20);
+  const since  = cutoff(3);
+  const result = [];
+
+  for (const bill of raw) {
+    const actionText = bill.latestAction?.text || '';
+    const actionDate = bill.latestAction?.actionDate || '';
+    if (actionDate < since) continue;
+
+    const isSigned = /signed by president|became public law/i.test(actionText);
+    const isVetoed = /vetoed by president/i.test(actionText);
+    if (!isSigned && !isVetoed) continue;
+
+    const congress = bill.congress;
+    const type     = (bill.type || '').toLowerCase();
+    const number   = bill.number;
+    const action   = isSigned ? 'signed' : 'vetoed';
+    const tid      = `${action}:${congress}:${type}:${number}`;
+    if (hasPostedPresidentialAction(tid)) continue;
+
+    try {
+      const detail = await fetchBillDetail(congress, type, number);
+      if (!detail) continue;
+
+      const law = isSigned && detail.laws?.length > 0
+        ? `Public Law ${detail.laws[0].number}`
+        : null;
+
+      result.push({
+        trackingId: tid,
+        action,
+        billId:    billId(type, number),
+        title:     detail.title || bill.title || 'Untitled',
+        lawNumber: law,
+        url:       billUrl(congress, type, number),
+      });
+    } catch (err) {
+      console.error(`[checker] presidential action ${tid}: ${err.message}`);
+    }
+  }
+
+  return result;
+}
+
+// ─── getExecutiveOrders ───────────────────────────────────────────────────────
+
+async function getExecutiveOrders() {
+  const res = await axios.get('https://www.federalregister.gov/api/v1/documents.json', {
+    params: {
+      'conditions[type][]':                        'PRESDOCU',
+      'conditions[presidential_document_type][]':  'executive_order',
+      order:    'newest',
+      per_page: 5,
+    },
+    timeout: 12000,
+  });
+
+  const docs   = res.data.results || [];
+  const since  = cutoff(3);
+  const result = [];
+
+  for (const doc of docs) {
+    if ((doc.signing_date || '') < since) continue;
+    const tid = `eo:${doc.document_number}`;
+    if (hasPostedEO(tid)) continue;
+
+    result.push({
+      trackingId:  tid,
+      number:      doc.document_number,
+      title:       doc.title,
+      signingDate: doc.signing_date,
+      abstract:    doc.abstract || null,
+      url:         doc.html_url,
+    });
+  }
+
+  return result;
+}
+
+module.exports = { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getLatestVote, getLatestBill };

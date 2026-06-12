@@ -146,6 +146,28 @@ function formatVoteThread(vote) {
   return [formatVoteSummary(vote)];
 }
 
+// ─── Presidential action posts ───────────────────────────────────────────────
+
+function formatSignedPost(action) {
+  const lawLine = action.lawNumber ? `\n\nNow ${action.lawNumber}.` : '';
+  const title   = trunc(action.title, 120);
+  const url     = action.url ? `\n\n📖 Read the full bill:\n${action.url}` : '';
+  return `✍️ SIGNED INTO LAW: ${action.billId}\n\n${title}${lawLine}${url}\n\n#CivicPulse #Congress`;
+}
+
+function formatVetoedPost(action) {
+  const title = trunc(action.title, 100);
+  const url   = action.url ? `\n\n📖 Read the full bill:\n${action.url}` : '';
+  return `🚫 VETOED: ${action.billId}\n\n${title}\n\nThe President has vetoed this bill. Congress may attempt an override with a 2/3 majority.${url}\n\n#CivicPulse #Congress`;
+}
+
+function formatExecutiveOrderPost(eo) {
+  const title    = trunc(eo.title, 120);
+  const abstract = eo.abstract ? '\n\n' + trunc(eo.abstract, 80) : '';
+  const url      = eo.url ? `\n\n📖 Full text:\n${eo.url}` : '';
+  return `📋 EXECUTIVE ORDER #${eo.number}\n\n${title}${abstract}\n\nSigned: ${eo.signingDate}${url}\n\n#CivicPulse #ExecutiveOrder`;
+}
+
 // ─── Adjournment posts ────────────────────────────────────────────────────────
 
 function formatAdjournedPost(returnDate) {
@@ -157,4 +179,4 @@ function formatReturnedPost() {
   return `🏛️ CONGRESS HAS RETURNED\n\nBoth chambers are back in session. Legislative activity has resumed — stay tuned for upcoming votes.\n\n#CivicPulse #Congress`;
 }
 
-module.exports = { formatBillThread, formatVoteThread, formatVoteSummary, formatAdjournedPost, formatReturnedPost };
+module.exports = { formatBillThread, formatVoteThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost };
