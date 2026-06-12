@@ -6,7 +6,8 @@ const cron = require('node-cron');
 const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getCongressStatus, getHillReportData } = require('./checker');
 const { formatBillThread, formatVoteSummary, formatVoteQuestion, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport } = require('./formatter');
 const { postThread, postVoteThread }                                                                  = require('./xpost');
-const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState, hasPostedHillReport, markHillReportPosted } = require('./tracker');
+const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState, hasPostedHillReport, markHillReportPosted, isInRecess } = require('./tracker');
+const { maybeUpdateBio } = require('./bio');
 const { generateVoteImage }                                                             = require('./voteImage');
 
 const VOTE_IMAGE = process.env.VOTE_IMAGE !== 'false';
@@ -124,6 +125,9 @@ async function runOnce() {
       console.error('[bot] failed to post return notice:', err.message);
     }
   }
+
+  // ── Bio update (X only; respects X_UPDATE_BIO env flag) ─────────────────────
+  await maybeUpdateBio(isInRecess());
 }
 
 // ─── Hill Report ─────────────────────────────────────────────────────────────
