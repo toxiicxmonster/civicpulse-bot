@@ -168,6 +168,18 @@ function formatExecutiveOrderPost(eo) {
   return `📋 EXECUTIVE ORDER #${eo.number}\n\n${title}${abstract}\n\nSigned: ${eo.signingDate}${url}\n\n#CivicPulse #ExecutiveOrder`;
 }
 
+// ─── Session status post (manual / forced) ───────────────────────────────────
+
+function formatSessionStatusPost(inRecess, returnDate) {
+  if (inRecess) {
+    const line = returnDate
+      ? `🗓️ Scheduled to return: ${returnDate}`
+      : '🗓️ Return date not yet announced.';
+    return `🏛️ CONGRESS STATUS: ADJOURNED\n\nBoth chambers are currently in recess. No votes or floor activity expected until they return.\n\n${line}\n\n#CivicPulse #Congress`;
+  }
+  return `🏛️ CONGRESS STATUS: IN SESSION\n\nCongress is currently in session. Legislative activity is ongoing — stay tuned for vote alerts and bill updates.\n\n#CivicPulse #Congress`;
+}
+
 // ─── Adjournment posts ────────────────────────────────────────────────────────
 
 function formatAdjournedPost(returnDate) {
@@ -179,4 +191,4 @@ function formatReturnedPost() {
   return `🏛️ CONGRESS HAS RETURNED\n\nBoth chambers are back in session. Legislative activity has resumed — stay tuned for upcoming votes.\n\n#CivicPulse #Congress`;
 }
 
-module.exports = { formatBillThread, formatVoteThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost };
+module.exports = { formatBillThread, formatVoteThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost };

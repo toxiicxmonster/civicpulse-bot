@@ -4,9 +4,9 @@ require('dotenv').config();
 const cron = require('node-cron');
 
 const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate } = require('./checker');
-const { formatBillThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost } = require('./formatter');
+const { formatBillThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost } = require('./formatter');
 const { postThread, postVoteThread }                                                                  = require('./xpost');
-const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState } = require('./tracker');
+const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState, isInRecess } = require('./tracker');
 const { generateVoteImage }                                                             = require('./voteImage');
 
 const VOTE_IMAGE = process.env.VOTE_IMAGE !== 'false';
@@ -140,6 +140,34 @@ if (process.argv.includes('--single-run')) {
   runOnce()
     .then(() => { console.log('[bot] done'); process.exit(0); })
     .catch(err => { console.error('[bot] fatal:', err); process.exit(1); });
+
+} else if (process.argv.includes('--post-status')) {
+  // Usage:
+  //   node src/bot.js --post-status                              (reads stored recess state)
+  //   node src/bot.js --post-status adjourned                    (force adjourned)
+  //   node src/bot.js --post-status adjourned --return-date "July 7, 2026"
+  //   node src/bot.js --post-status session                      (force in-session)
+  const args    = process.argv.slice(2);
+  const flagIdx = args.indexOf('--post-status');
+  const positional = args[flagIdx + 1] && !args[flagIdx + 1].startsWith('--') ? args[flagIdx + 1] : null;
+  const rdIdx   = args.indexOf('--return-date');
+  const returnDate = rdIdx !== -1 ? args[rdIdx + 1] : null;
+
+  let inRecess;
+  if (positional === 'adjourned')     inRecess = true;
+  else if (positional === 'session')  inRecess = false;
+  else                                inRecess = isInRecess();
+
+  console.log(`[bot] posting status: ${inRecess ? 'adjourned' : 'in session'}${returnDate ? ` (return: ${returnDate})` : ''}`);
+
+  postThread([formatSessionStatusPost(inRecess, returnDate)])
+    .then(() => {
+      setRecessState(inRecess);
+      console.log('[bot] status posted');
+      process.exit(0);
+    })
+    .catch(err => { console.error('[bot] fatal:', err); process.exit(1); });
+
 } else {
   // Build cron expression from POLL_INTERVAL_MINUTES (default 15, clamped 1–59)
   const pollMins = Math.min(59, Math.max(1, parseInt(process.env.POLL_INTERVAL_MINUTES, 10) || 15));
