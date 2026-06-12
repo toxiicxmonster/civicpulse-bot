@@ -5,7 +5,7 @@ const { getBioState, setBioState } = require('./tracker');
 // ─── Bio text building ────────────────────────────────────────────────────────
 
 const STATIC = '🏛️ Real-time congressional tracking | Bills, votes, presidential actions & EOs | Nonpartisan civic data';
-const FOOTER = '🤖 Automated bot | Powered by @CivicPulse';
+const FOOTER = '🤖 Automated bot | Powered by @USCivicPulse';
 const BIO_MAX = 160;
 
 function buildBio(inRecess, returnDate = null) {
