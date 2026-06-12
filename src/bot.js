@@ -7,7 +7,7 @@ const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, ge
 const { formatBillThread, formatVoteSummary, formatVoteQuestion, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport } = require('./formatter');
 const { postThread, postVoteThread }                                                                  = require('./xpost');
 const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState, hasPostedHillReport, markHillReportPosted, isInRecess } = require('./tracker');
-const { maybeUpdateBio } = require('./bio');
+const { maybeUpdateBio, forceUpdateBio } = require('./bio');
 const { generateVoteImage }                                                             = require('./voteImage');
 
 const VOTE_IMAGE = process.env.VOTE_IMAGE !== 'false';
@@ -170,6 +170,22 @@ validateEnv();
 
 if (process.argv.includes('--single-run')) {
   runOnce()
+    .then(() => { console.log('[bot] done'); process.exit(0); })
+    .catch(err => { console.error('[bot] fatal:', err); process.exit(1); });
+
+} else if (process.argv.includes('--update-bio')) {
+  // Usage:
+  //   node src/bot.js --update-bio
+  //   node src/bot.js --update-bio --recess
+  //   node src/bot.js --update-bio --recess --return-date "July 7, 2026"
+  //
+  // Bypasses X_UPDATE_BIO flag and throttle — always writes to X bio.
+  const args       = process.argv.slice(2);
+  const inRecess   = args.includes('--recess');
+  const rdIdx      = args.indexOf('--return-date');
+  const returnDate = rdIdx !== -1 ? args[rdIdx + 1] : null;
+
+  forceUpdateBio(inRecess, returnDate)
     .then(() => { console.log('[bot] done'); process.exit(0); })
     .catch(err => { console.error('[bot] fatal:', err); process.exit(1); });
 

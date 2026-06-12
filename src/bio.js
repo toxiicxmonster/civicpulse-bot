@@ -71,7 +71,10 @@ async function updateXBio(bioText) {
 async function maybeUpdateBio(inRecess, returnDate = null) {
   if (process.env.X_UPDATE_BIO !== 'true') return;
   if (!shouldUpdateBio(inRecess)) return;
+  await forceUpdateBio(inRecess, returnDate);
+}
 
+async function forceUpdateBio(inRecess, returnDate = null) {
   const bioText   = buildBio(inRecess, returnDate);
   const newStatus = inRecess ? 'recess' : 'session';
 
@@ -87,7 +90,8 @@ async function maybeUpdateBio(inRecess, returnDate = null) {
     console.log(`[bio] X bio updated — ${newStatus.toUpperCase()} (${[...bioText].length} chars)`);
   } catch (err) {
     console.warn('[bio] failed to update X bio:', err.message);
+    throw err;
   }
 }
 
-module.exports = { buildBio, truncateBio, shouldUpdateBio, maybeUpdateBio };
+module.exports = { buildBio, truncateBio, shouldUpdateBio, maybeUpdateBio, forceUpdateBio };
