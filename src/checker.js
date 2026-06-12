@@ -330,6 +330,27 @@ async function getAdjournmentUpdate(newVoteDates) {
   return null;
 }
 
+// ─── getCongressStatus ────────────────────────────────────────────────────────
+// Uses the Daily Congressional Record as the signal: Congress publishes a record
+// every day they are in session. A gap >= RECESS_THRESHOLD_DAYS means recess.
+
+async function getCongressStatus() {
+  // sort=issueDate+desc must stay as a literal + to avoid %2B rejection
+  const url  = `${CONGRESS_BASE}/daily-congressional-record?api_key=${key()}&sort=issueDate+desc&limit=1&format=json`;
+  const data = (await axios.get(url, { timeout: 12000 })).data;
+  const issues = data.dailyCongressionalRecord || [];
+  if (!issues.length) throw new Error('no Congressional Record data returned');
+
+  const lastDate  = issues[0].issueDate;
+  const today     = new Date().toISOString().split('T')[0];
+  const daysSince = Math.floor((new Date(today) - new Date(lastDate)) / 86400000);
+
+  return {
+    inSession:       daysSince < RECESS_THRESHOLD_DAYS,
+    lastSessionDate: lastDate,
+  };
+}
+
 // ─── Test helpers (bypass tracker, return exactly one result) ────────────────
 
 async function getLatestVote() {
@@ -483,4 +504,4 @@ async function getExecutiveOrders() {
   return result;
 }
 
-module.exports = { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getLatestVote, getLatestBill };
+module.exports = { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getCongressStatus, getLatestVote, getLatestBill };

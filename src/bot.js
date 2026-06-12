@@ -3,10 +3,10 @@ require('dotenv').config();
 
 const cron = require('node-cron');
 
-const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate } = require('./checker');
+const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getCongressStatus } = require('./checker');
 const { formatBillThread, formatVoteSummary, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost } = require('./formatter');
 const { postThread, postVoteThread }                                                                  = require('./xpost');
-const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState, isInRecess } = require('./tracker');
+const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState } = require('./tracker');
 const { generateVoteImage }                                                             = require('./voteImage');
 
 const VOTE_IMAGE = process.env.VOTE_IMAGE !== 'false';
@@ -143,30 +143,32 @@ if (process.argv.includes('--single-run')) {
 
 } else if (process.argv.includes('--post-status')) {
   // Usage:
-  //   node src/bot.js --post-status                              (reads stored recess state)
-  //   node src/bot.js --post-status adjourned                    (force adjourned)
-  //   node src/bot.js --post-status adjourned --return-date "July 7, 2026"
-  //   node src/bot.js --post-status session                      (force in-session)
-  const args    = process.argv.slice(2);
-  const flagIdx = args.indexOf('--post-status');
-  const positional = args[flagIdx + 1] && !args[flagIdx + 1].startsWith('--') ? args[flagIdx + 1] : null;
-  const rdIdx   = args.indexOf('--return-date');
+  //   node src/bot.js --post-status
+  //   node src/bot.js --post-status --return-date "July 7, 2026"
+  //
+  // Status (in session / adjourned) is determined from the Daily Congressional
+  // Record API. Return date is not available via API — pass --return-date if known.
+  const args       = process.argv.slice(2);
+  const rdIdx      = args.indexOf('--return-date');
   const returnDate = rdIdx !== -1 ? args[rdIdx + 1] : null;
 
-  let inRecess;
-  if (positional === 'adjourned')     inRecess = true;
-  else if (positional === 'session')  inRecess = false;
-  else                                inRecess = isInRecess();
+  (async () => {
+    try {
+      console.log('[bot] fetching Congress status from Congressional Record API…');
+      const { inSession, lastSessionDate } = await getCongressStatus();
+      const inRecess = !inSession;
+      console.log(`[bot] status: ${inSession ? 'in session' : 'adjourned'} (last record: ${lastSessionDate})`);
+      if (returnDate) console.log(`[bot] return date override: ${returnDate}`);
 
-  console.log(`[bot] posting status: ${inRecess ? 'adjourned' : 'in session'}${returnDate ? ` (return: ${returnDate})` : ''}`);
-
-  postThread([formatSessionStatusPost(inRecess, returnDate)])
-    .then(() => {
+      await postThread([formatSessionStatusPost(inRecess, returnDate)]);
       setRecessState(inRecess);
       console.log('[bot] status posted');
       process.exit(0);
-    })
-    .catch(err => { console.error('[bot] fatal:', err); process.exit(1); });
+    } catch (err) {
+      console.error('[bot] fatal:', err);
+      process.exit(1);
+    }
+  })();
 
 } else {
   // Build cron expression from POLL_INTERVAL_MINUTES (default 15, clamped 1–59)
