@@ -48,6 +48,10 @@ async function runOnce() {
   if (presidentialActions.status === 'rejected') console.error('[bot] presidential actions error:', presidentialActions.reason?.message);
   if (executiveOrders.status    === 'rejected') console.error('[bot] executive orders error:',    executiveOrders.reason?.message);
 
+  if (newVotes.length === 0 && votes.status === 'fulfilled') {
+    console.log('[bot] no vote data available, skipping vote posts');
+  }
+
   console.log(`[bot] found ${newBills.length} new bill(s), ${newVotes.length} new vote(s), ${newPresidentialActions.length} presidential action(s), ${newExecutiveOrders.length} executive order(s)`);
 
   // ── Bills: text thread ───────────────────────────────────────────────────────

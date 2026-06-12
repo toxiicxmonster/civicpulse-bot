@@ -247,17 +247,33 @@ async function fetchRecentVotes(limit = 20) {
 }
 
 async function getNewVotes() {
-  const raw      = await fetchRecentVotes(20);
-  const memberMap = await getMemberMap();
-  const result   = [];
+  const raw = await fetchRecentVotes(20);
+  if (!raw.length) {
+    console.log('[checker] no vote data available, skipping');
+    return [];
+  }
+
+  // Only fetch member map when there are votes to process — avoids Congress.gov
+  // call during recess when that API may also be slow or rate-limited.
+  let memberMap = {};
+  try {
+    memberMap = await getMemberMap();
+  } catch (err) {
+    console.error(`[checker] member map unavailable — ${err.message} — proceeding without district info`);
+  }
+
+  const result = [];
 
   for (const vote of raw) {
+    // Guard against null/malformed entries in the GovTrack response array
+    if (!vote || typeof vote !== 'object') continue;
+
     const { congress, session, chamber, number, passed, result: voteResult,
             total_plus: yea = 0, total_minus: nay = 0, total_other: other = 0 } = vote;
 
-    if (voteResult === null || voteResult === undefined) continue;
+    if (voteResult == null) continue;
 
-    const ch  = chamber === 'senate' ? 'SENATE' : 'HOUSE';
+    const ch  = (chamber === 'senate') ? 'SENATE' : 'HOUSE';
     const tid = `vote:${congress}-${session}-${ch[0]}-${number}`;
     if (hasPostedVote(tid)) continue;
 
@@ -280,13 +296,12 @@ async function getNewVotes() {
       const url = (rb?.congress != null && rb?.bill_number != null)
         ? billUrl(rb.congress, (rb.bill_type || '').toLowerCase(), rb.bill_number)
         : parsedUrl;
-      const voteBillId = parsedBillId;
 
       const voteObj = {
         trackingId:  tid,
         voteId:      `${congress}-${session}-${ch[0]}-${number}`,
         chamber:     ch,
-        billId:      voteBillId,
+        billId:      parsedBillId,
         question:    vote.question || 'Procedural Vote',
         result:      didPass ? 'PASSED' : 'FAILED',
         resultEmoji: didPass ? '✅' : '❌',
@@ -547,14 +562,22 @@ async function getExecutiveOrders() {
 // Does NOT consult the dedup tracker — the caller decides whether to post.
 
 async function getHillReportData(date = new Date().toISOString().split('T')[0]) {
-  const [rawVotes, rawBills] = await Promise.all([
+  // Use allSettled so a single API failure doesn't abort the entire Hill Report —
+  // during recess one endpoint may be slow/down while the other still responds.
+  const [votesRes, billsRes] = await Promise.allSettled([
     fetchRecentVotes(50),
     fetchRecentBills(50),
   ]);
 
+  if (votesRes.status === 'rejected') console.error(`[checker] hill report: votes fetch failed — ${votesRes.reason?.message}`);
+  if (billsRes.status  === 'rejected') console.error(`[checker] hill report: bills fetch failed — ${billsRes.reason?.message}`);
+
+  const rawVotes = votesRes.status === 'fulfilled' ? (votesRes.value || []) : [];
+  const rawBills = billsRes.status  === 'fulfilled' ? (billsRes.value  || []) : [];
+
   // GovTrack vote objects include a `created` ISO timestamp; filter to today
   const votes = rawVotes
-    .filter(v => v.result !== null && v.result !== undefined && (v.created || '').startsWith(date))
+    .filter(v => v && v.result != null && (v.created || '').startsWith(date))
     .map(v => {
       const ch      = v.chamber === 'senate' ? 'SENATE' : 'HOUSE';
       const didPass = v.passed === true || /pass|agree|adopt|approv/i.test(String(v.result || ''));
@@ -566,8 +589,10 @@ async function getHillReportData(date = new Date().toISOString().split('T')[0]) 
       return { chamber: ch, billId: parsedBillId, question: v.question || 'Procedural Vote', passed: didPass, url };
     });
 
+  console.log(`[checker] hill report: ${votes.length} vote(s) found for ${date} (${rawVotes.length} total fetched)`);
+
   // Bills whose first action matches today — verify introducedDate via detail
-  const candidates = rawBills.filter(b => (b.latestAction?.actionDate || '') >= date);
+  const candidates = rawBills.filter(b => b && (b.latestAction?.actionDate || '') >= date);
   const bills = [];
   for (const bill of candidates) {
     const congress = bill.congress;
