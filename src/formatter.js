@@ -4,6 +4,15 @@ const MAX = 278; // leave a 2-char buffer under X's 280-character post limit
 
 // ─── Hashtag generation ─────────────────────────────────────────────────────
 
+// Matched against bill title only — for appropriations bills that need department-specific tags.
+const APPROPRIATIONS_MAP = [
+  [/defense appropriations/i,         ['#DefenseBudget']],
+  [/labor[,\s]+hhs[,\s]+education/i,  ['#EducationFunding', '#Healthcare']],
+  [/financial services/i,             ['#FinancialServices']],
+  [/homeland security/i,              ['#HomelandSecurity']],
+  [/agriculture appropriations/i,     ['#AgricultureBudget']],
+];
+
 const HASHTAG_MAP = [
   [/\b(health\s?care|medicare|medicaid|aca|affordable care|health insurance|prescription|drug\s?price)/i, ['#Healthcare', '#Medicare']],
   [/\b(public health|health awareness|health disparit|health equity|disease prevention|epidemic|pandemic)/i, ['#PublicHealth']],
@@ -25,6 +34,18 @@ const HASHTAG_MAP = [
   [/\b(trade|export|import|wto|nafta|usmca|sanction)/i,                                              ['#Trade']],
   [/\b(tech(nology)?|artificial intelligence|ai|data privacy|cybersecurity|internet)/i,              ['#Technology', '#AI']],
   [/\b(small business|entrepreneur|startup|sba)/i,                                                   ['#SmallBusiness']],
+  [/\b(opioid|fentanyl|addiction|substance abuse)/i,                                                 ['#DrugPolicy', '#OpioidCrisis']],
+  [/\b(foreign policy|ukraine|israel|china|nato\s+allies)/i,                                         ['#ForeignPolicy']],
+  [/\b(budget|deficit|debt ceiling|spending cuts)/i,                                                 ['#FederalBudget', '#NationalDebt']],
+  [/\b(abortion|reproductive rights|planned parenthood)/i,                                           ['#ReproductiveRights']],
+  [/\b(minimum wage|labor union|union|workers?\s+right)/i,                                           ['#LaborRights', '#MinimumWage']],
+  [/\b(energy|oil|natural gas|nuclear|pipeline)/i,                                                   ['#EnergyPolicy']],
+  [/\b(food stamps|snap|welfare|poverty)/i,                                                          ['#FoodSecurity']],
+  [/\b(lgbtq|transgender|gender identity|discrimination)/i,                                          ['#LGBTQRights']],
+  [/\b(mental health|suicide|counseling|behavioral health)/i,                                        ['#MentalHealth']],
+  [/\b(space|nasa|satellite)/i,                                                                       ['#SpacePolicy']],
+  [/\b(cryptocurrency|blockchain|digital assets?|crypto)/i,                                          ['#Crypto', '#DigitalAssets']],
+  [/\b(native american|tribal|indigenous)/i,                                                         ['#IndigenousRights']],
 ];
 
 // Returns up to maxTags unique bill-specific hashtags based on title and synopsis.
@@ -32,6 +53,14 @@ function generateHashtags(title = '', synopsis = '', subjects = [], maxTags = 5)
   const text = [title, synopsis, ...subjects].join(' ');
   const seen = new Set();
   const tags = [];
+  for (const [re, candidates] of APPROPRIATIONS_MAP) {
+    if (re.test(title)) {
+      for (const tag of candidates) {
+        if (!seen.has(tag)) { seen.add(tag); tags.push(tag); }
+        if (tags.length >= maxTags) return tags;
+      }
+    }
+  }
   for (const [re, candidates] of HASHTAG_MAP) {
     if (re.test(text)) {
       for (const tag of candidates) {
