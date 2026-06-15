@@ -478,8 +478,8 @@ async function getLatestBill(days = 30) {
 // ─── getPresidentialActions ───────────────────────────────────────────────────
 
 async function getPresidentialActions() {
-  const raw    = await fetchRecentBills(20);
-  const since  = cutoff(3);
+  const raw    = await fetchRecentBills(50);
+  const since  = cutoff(7);
   const result = [];
 
   for (const bill of raw) {
@@ -536,7 +536,7 @@ async function getExecutiveOrders() {
   });
 
   const docs   = res.data.results || [];
-  const since  = cutoff(3);
+  const since  = cutoff(7);
   const result = [];
 
   for (const doc of docs) {

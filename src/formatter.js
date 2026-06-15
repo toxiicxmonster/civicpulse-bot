@@ -182,14 +182,16 @@ function formatVoteSummary(vote) {
   const dNay = dems.filter(v => isNay(v)).length;
   const dAbs = dems.length - dYea - dNay;
 
-  const partyLines = `🐘 R: ✅ ${rYea}  ❌ ${rNay}  ⬜ ${rAbs}\n🫏 D: ✅ ${dYea}  ❌ ${dNay}  ⬜ ${dAbs}`;
-  const popLine    = vote.population
+  const partyLines  = `🐘 R: ✅ ${rYea}  ❌ ${rNay}  ⬜ ${rAbs}\n🫏 D: ✅ ${dYea}  ❌ ${dNay}  ⬜ ${dAbs}`;
+  const popLine     = vote.population
     ? `\n👥 Pop. represented: ✅ ${vote.population.yeaPct}%  ❌ ${vote.population.nayPct}%`
     : '';
-  const urlLine    = vote.url ? `\n\n📖 Read the full bill:\n${vote.url}` : '';
-  const counts     = `${vote.resultEmoji} ${vote.result}\nYEA: ${yea} | NAY: ${nay} | ABSENT: ${absent}`;
+  const urlLine     = vote.url ? `\n\n📖 Read the full bill:\n${vote.url}` : '';
+  const counts      = `${vote.resultEmoji} ${vote.result}\nYEA: ${yea} | NAY: ${nay} | ABSENT: ${absent}`;
+  const dynamicTags = generateHashtags(vote.question || '', vote.billTitle || '');
+  const hashtags    = ['#CivicPulse', '#Congress', ...dynamicTags].join(' ');
 
-  return `🏛️ VOTE ALERT: ${label}\n\n${counts}\n\n${partyLines}${popLine}${urlLine}\n\n#CivicPulse #Congress`;
+  return `🏛️ VOTE ALERT: ${label}\n\n${counts}\n\n${partyLines}${popLine}${urlLine}\n\n${hashtags}`;
 }
 
 // Returns the question text for the reply tweet following a vote post.

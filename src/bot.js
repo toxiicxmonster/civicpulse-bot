@@ -11,6 +11,11 @@ const { generateVoteImage }                                                     
 
 const VOTE_IMAGE = process.env.VOTE_IMAGE !== 'false';
 
+// Returns today's date as YYYY-MM-DD in Eastern Time, regardless of system TZ.
+function todayET() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+}
+
 // ─── Startup validation ───────────────────────────────────────────────────────
 
 function validateEnv() {
@@ -128,7 +133,7 @@ async function runOnce() {
 
 // ─── Hill Report ─────────────────────────────────────────────────────────────
 
-async function runHillReport(date = new Date().toISOString().split('T')[0], force = false) {
+async function runHillReport(date = todayET(), force = false) {
   if (!force && hasPostedHillReport(date)) {
     console.log(`[bot] hill report already posted for ${date} — skipping (use --force to override)`);
     return;
@@ -176,7 +181,7 @@ if (process.argv.includes('--single-run')) {
   //   node src/bot.js --hill-report --force
   const args  = process.argv.slice(2);
   const dIdx  = args.indexOf('--date');
-  const date  = dIdx !== -1 ? args[dIdx + 1] : new Date().toISOString().split('T')[0];
+  const date  = dIdx !== -1 ? args[dIdx + 1] : todayET();
   const force = args.includes('--force');
 
   runHillReport(date, force)
@@ -227,10 +232,7 @@ if (process.argv.includes('--single-run')) {
   runOnce().catch(err => console.error('[bot] run error:', err));
   cron.schedule(cronExpr, () => runOnce().catch(err => console.error('[bot] run error:', err)));
   cron.schedule(hillCronExpr, () => {
-    // Use local date so the report reflects the day that just ended in ET
-    const d     = new Date();
-    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    runHillReport(today).catch(err => console.error('[bot] hill report error:', err));
+    runHillReport(todayET()).catch(err => console.error('[bot] hill report error:', err));
   });
 
   process.on('SIGTERM', () => {
