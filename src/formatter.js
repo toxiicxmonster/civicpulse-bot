@@ -99,6 +99,19 @@ function generateHashtags(title = '', synopsis = '', subjects = [], maxTags = 5)
 
 // ─── Utilities ──────────────────────────────────────────────────────────────
 
+// Returns a "we missed it" notice when the event date is not today (ET).
+// Returns empty string for same-day events.
+function missedItLine(dateStr) {
+  if (!dateStr) return '';
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+  if (dateStr >= today) return '';
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const formatted = new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    month: 'long', day: 'numeric', year: 'numeric',
+  });
+  return `\n⏰ We missed it — occurred ${formatted}`;
+}
+
 function trunc(str, maxLen) {
   if (!str) return '';
   const s = str.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -188,7 +201,8 @@ function formatBillThread(bill) {
   const hashtags  = ['#CivicPulse', '#Congress', '#NewBill', ...dynamicTags].join(' ');
   const header    = `📜 NEW BILL INTRODUCED\n\n${bill.billId}`;
   const linkLine  = bill.url ? `\n\n📖 ${bill.url}` : '';
-  const suffix    = `${linkLine}\n\n${hashtags}`;
+  const missed    = missedItLine(bill.introducedDate);
+  const suffix    = `${linkLine}${missed}\n\n${hashtags}`;
   const available = MAX - header.length - suffix.length - 2; // \n\n before title
   const title     = trunc(bill.title, Math.max(60, available));
   tweets.push(`${header}\n\n${title}${suffix}`);
@@ -244,8 +258,9 @@ function formatVoteSummary(vote) {
   const counts      = `${vote.resultEmoji} ${vote.result}\nYEA: ${yea} | NAY: ${nay} | ABSENT: ${absent}`;
   const dynamicTags = generateHashtags(vote.question || '', vote.billTitle || '');
   const hashtags    = ['#CivicPulse', '#Congress', ...dynamicTags].join(' ');
+  const missed      = missedItLine(vote.date);
 
-  return `🏛️ VOTE ALERT: ${label}\n\n${counts}\n\n${partyLines}${popLine}${urlLine}\n\n${hashtags}`;
+  return `🏛️ VOTE ALERT: ${label}\n\n${counts}\n\n${partyLines}${popLine}${urlLine}${missed}\n\n${hashtags}`;
 }
 
 // Returns the question text for the reply tweet following a vote post.
@@ -262,23 +277,25 @@ function formatVoteThread(vote) {
 // ─── Presidential action posts ───────────────────────────────────────────────
 
 function formatSignedPost(action) {
-  const lawLine    = action.lawNumber ? `\n\nNow ${action.lawNumber}.` : '';
-  const url        = action.url ? `\n\n📖 Read the full bill:\n${action.url}` : '';
+  const lawLine     = action.lawNumber ? `\n\nNow ${action.lawNumber}.` : '';
+  const url         = action.url ? `\n\n📖 Read the full bill:\n${action.url}` : '';
+  const missed      = missedItLine(action.actionDate);
   const dynamicTags = generateHashtags(action.title, '', action.subjects || []);
-  const hashtags   = ['#CivicPulse', '#Congress', ...dynamicTags].join(' ');
-  const overhead   = `✍️ SIGNED INTO LAW: ${action.billId}\n\n`.length + lawLine.length + url.length + `\n\n${hashtags}`.length;
-  const title      = trunc(action.title, Math.max(20, MAX - overhead));
-  return `✍️ SIGNED INTO LAW: ${action.billId}\n\n${title}${lawLine}${url}\n\n${hashtags}`;
+  const hashtags    = ['#CivicPulse', '#Congress', ...dynamicTags].join(' ');
+  const overhead    = `✍️ SIGNED INTO LAW: ${action.billId}\n\n`.length + lawLine.length + url.length + missed.length + `\n\n${hashtags}`.length;
+  const title       = trunc(action.title, Math.max(20, MAX - overhead));
+  return `✍️ SIGNED INTO LAW: ${action.billId}\n\n${title}${lawLine}${url}${missed}\n\n${hashtags}`;
 }
 
 function formatVetoedPost(action) {
-  const url        = action.url ? `\n\n📖 Read the full bill:\n${action.url}` : '';
-  const override   = '\n\nThe President has vetoed this bill. Congress may attempt an override with a 2/3 majority.';
+  const url         = action.url ? `\n\n📖 Read the full bill:\n${action.url}` : '';
+  const override    = '\n\nThe President has vetoed this bill. Congress may attempt an override with a 2/3 majority.';
+  const missed      = missedItLine(action.actionDate);
   const dynamicTags = generateHashtags(action.title, '', action.subjects || []);
-  const hashtags   = ['#CivicPulse', '#Congress', ...dynamicTags].join(' ');
-  const overhead   = `🚫 VETOED: ${action.billId}\n\n`.length + override.length + url.length + `\n\n${hashtags}`.length;
-  const title      = trunc(action.title, Math.max(20, MAX - overhead));
-  return `🚫 VETOED: ${action.billId}\n\n${title}${override}${url}\n\n${hashtags}`;
+  const hashtags    = ['#CivicPulse', '#Congress', ...dynamicTags].join(' ');
+  const overhead    = `🚫 VETOED: ${action.billId}\n\n`.length + override.length + url.length + missed.length + `\n\n${hashtags}`.length;
+  const title       = trunc(action.title, Math.max(20, MAX - overhead));
+  return `🚫 VETOED: ${action.billId}\n\n${title}${override}${url}${missed}\n\n${hashtags}`;
 }
 
 function formatExecutiveOrderPost(eo) {
@@ -286,8 +303,9 @@ function formatExecutiveOrderPost(eo) {
   const hashtags    = ['#CivicPulse', '#ExecutiveOrder', ...dynamicTags].join(' ');
   const url         = eo.url ? `\n\n📖 Full text:\n${eo.url}` : '';
   const abstract    = eo.abstract ? '\n\n' + trunc(eo.abstract, 80) : '';
+  const missed      = missedItLine(eo.signingDate);
   const title       = trunc(eo.title, 120);
-  return `📋 EXECUTIVE ORDER #${eo.number}\n\n${title}${abstract}\n\nSigned: ${eo.signingDate}${url}\n\n${hashtags}`;
+  return `📋 EXECUTIVE ORDER #${eo.number}\n\n${title}${abstract}\n\nSigned: ${eo.signingDate}${missed}${url}\n\n${hashtags}`;
 }
 
 // ─── Session status post (manual / forced) ───────────────────────────────────

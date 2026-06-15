@@ -1,6 +1,6 @@
 'use strict';
 const axios = require('axios');
-const { hasPostedBill, markBillPosted, hasPostedVote, hasPostedPresidentialAction, markPresidentialActionPosted, hasPostedEO, markEOPosted, getLastVoteDate, isInRecess } = require('./tracker');
+const { hasPostedBill, hasPostedVote, hasPostedPresidentialAction, hasPostedEO, getLastVoteDate, isInRecess } = require('./tracker');
 const { calcPopRepresented } = require('./population');
 
 const CONGRESS_BASE = 'https://api.congress.gov/v3';
@@ -210,7 +210,7 @@ function cutoff(days) { const d = new Date(); d.setDate(d.getDate() - days); ret
 
 async function getNewBills() {
   const raw    = await fetchRecentBills(20);
-  const since  = cutoff(3);
+  const since  = cutoff(7);
   const result = [];
 
   for (const bill of raw) {
@@ -220,18 +220,13 @@ async function getNewBills() {
     const tid      = `bill:${congress}:${type}:${number}`;
 
     // Quick pre-filter: skip bills with no recent activity
-    if ((bill.latestAction?.actionDate || '') < cutoff(6)) continue;
+    if ((bill.latestAction?.actionDate || '') < cutoff(14)) continue;
     if (hasPostedBill(tid)) continue;
 
     try {
       const detail     = await fetchBillDetail(congress, type, number);
       if (!detail) continue;
-      // Definitive check: only post bills introduced within the 3-day window.
-      // If the bill is older, mark it as seen so it is never re-evaluated.
-      if ((detail.introducedDate || '') < since) {
-        markBillPosted(tid);
-        continue;
-      }
+      if ((detail.introducedDate || '') < since) continue;
       const summary    = await fetchBillSummary(congress, type, number);
       const cosponsors = await fetchBillCosponsors(congress, type, number);
 
@@ -245,10 +240,11 @@ async function getNewBills() {
         trackingId: tid,
         billId: billId(type, number),
         congress, type, number,
-        title:   detail.title || bill.title || 'Untitled',
-        synopsis: summary,
+        title:        detail.title || bill.title || 'Untitled',
+        synopsis:     summary,
         sponsors,
-        url: billUrl(congress, type, number),
+        url:          billUrl(congress, type, number),
+        introducedDate: detail.introducedDate || '',
       });
     } catch (err) {
       console.error(`[checker] bill ${billId(type, number)}: ${err.message}`);
@@ -358,6 +354,7 @@ async function getNewVotes() {
         democrats,
         url,
         population:  null,
+        date:        (vote.created || '').slice(0, 10),
       };
       voteObj.population = calcPopRepresented(voteObj);
       result.push(voteObj);
@@ -491,6 +488,7 @@ async function getLatestVote() {
         result: didPass ? 'PASSED' : 'FAILED', resultEmoji: didPass ? '✅' : '❌',
         totals: { Yea: yea, Nay: nay, 'Not Voting': other, Present: 0 },
         republicans, democrats, url, population: null,
+        date: (vote.created || '').slice(0, 10),
       };
       voteObj.population = calcPopRepresented(voteObj);
       return voteObj;
@@ -552,14 +550,6 @@ async function getPresidentialActions() {
     const tid      = `${action}:${congress}:${type}:${number}`;
     if (hasPostedPresidentialAction(tid)) continue;
 
-    // Don't post if the signing/veto is older than 3 days — prevents stale catch-up posts.
-    // Mark as seen so this item is never re-evaluated.
-    if (actionDate < cutoff(3)) {
-      markPresidentialActionPosted(tid);
-      console.log(`[checker] ${tid} (${actionDate}) older than 3 days — marking as seen, skipping post`);
-      continue;
-    }
-
     try {
       const detail = await fetchBillDetail(congress, type, number);
       if (!detail) continue;
@@ -571,10 +561,11 @@ async function getPresidentialActions() {
       result.push({
         trackingId: tid,
         action,
-        billId:    billId(type, number),
-        title:     detail.title || bill.title || 'Untitled',
-        lawNumber: law,
-        url:       billUrl(congress, type, number),
+        billId:     billId(type, number),
+        title:      detail.title || bill.title || 'Untitled',
+        lawNumber:  law,
+        url:        billUrl(congress, type, number),
+        actionDate,
       });
     } catch (err) {
       console.error(`[checker] presidential action ${tid}: ${err.message}`);
@@ -607,12 +598,6 @@ async function getExecutiveOrders() {
     if ((doc.signing_date || '') < since) continue;
     const tid = `eo:${doc.document_number}`;
     if (hasPostedEO(tid)) continue;
-
-    // Don't post EOs older than 3 days — mark as seen to prevent re-evaluation.
-    if ((doc.signing_date || '') < cutoff(3)) {
-      markEOPosted(tid);
-      continue;
-    }
 
     result.push({
       trackingId:  tid,
