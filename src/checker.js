@@ -8,14 +8,44 @@ const GOVTRACK_BASE = 'https://www.govtrack.us/api/v2';
 
 const key = () => process.env.CONGRESS_API_KEY;
 
-// ─── Congress.gov helpers ────────────────────────────────────────────────────
+// ─── Resilient HTTP helper ────────────────────────────────────────────────────
+// Retries once on 500/503; returns null (never throws) so callers can return []/null.
+
+const RETRY_STATUSES = new Set([500, 503]);
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function resilientGet(url, options, sourceName) {
+  const doGet = () => axios.get(url, options);
+  try {
+    return await doGet();
+  } catch (err) {
+    const status = err.response?.status;
+    if (RETRY_STATUSES.has(status)) {
+      console.warn(`[checker] ${sourceName} returned ${status} — retrying in 30s`);
+      await sleep(30000);
+      try {
+        return await doGet();
+      } catch (retryErr) {
+        const s2 = retryErr.response?.status;
+        console.warn(`[checker] ${sourceName} failed again (${s2 || retryErr.code || retryErr.message}) — skipping`);
+        return null;
+      }
+    }
+    // Permanent errors (404, 401, network) or anything else — log and skip
+    console.warn(`[checker] ${sourceName} unavailable (${status || err.code || err.message}) — skipping`);
+    return null;
+  }
+}
+
+// ─── Congress.gov helpers ─────────────────────────────────────────────────────
 
 async function cgGet(path, params = {}) {
-  const res = await axios.get(`${CONGRESS_BASE}${path}`, {
+  const res = await resilientGet(`${CONGRESS_BASE}${path}`, {
     params: { api_key: key(), format: 'json', ...params },
     timeout: 12000,
-  });
-  return res.data;
+  }, `Congress.gov ${path}`);
+  return res?.data ?? null;
 }
 
 // ─── Member lookup table (bioguideId → name/district) ────────────────────────
@@ -32,7 +62,7 @@ async function getMemberMap() {
 
   while (true) {
     const data   = await cgGet('/member', { currentMember: true, limit: 250, offset });
-    const batch  = data.members || [];
+    const batch  = data?.members || [];
     for (const m of batch) {
       const [lastName = '', firstName = ''] = (m.name || '').split(', ');
       _memberMap[m.bioguideId] = {
@@ -43,7 +73,7 @@ async function getMemberMap() {
       };
     }
     offset += batch.length;
-    if (offset >= (data.pagination?.count ?? 0) || batch.length === 0) break;
+    if (offset >= (data?.pagination?.count ?? 0) || batch.length === 0) break;
   }
 
   _memberMapDate = today;
@@ -110,13 +140,15 @@ async function fetchSenateVoters(congress, sessionYear, rollNumber) {
   const sn  = senateSessionNum(sessionYear);
   const num = String(rollNumber).padStart(5, '0');
   const url = `https://www.senate.gov/legislative/LIS/roll_call_votes/vote${congress}${sn}/vote_${congress}_${sn}_${num}.xml`;
-  const res = await axios.get(url, { timeout: 12000 });
+  const res = await resilientGet(url, { timeout: 12000 }, 'Senate.gov XML');
+  if (!res) return [];
   return parseSenateXML(res.data);
 }
 
 async function fetchHouseVoters(sessionYear, rollNumber, memberMap) {
   const url = `https://clerk.house.gov/evs/${sessionYear}/roll${rollNumber}.xml`;
-  const res = await axios.get(url, { timeout: 12000 });
+  const res = await resilientGet(url, { timeout: 12000 }, 'House Clerk XML');
+  if (!res) return [];
   return parseHouseXML(res.data, memberMap);
 }
 
@@ -150,15 +182,23 @@ function currentCongress() { return Math.ceil((new Date().getFullYear() - 1788) 
 async function fetchRecentBills(limit = 20) {
   // sort=updateDate+desc must stay as a literal + in the URL; axios would encode it as %2B which the API rejects
   const url = `${CONGRESS_BASE}/bill/${currentCongress()}?api_key=${key()}&sort=updateDate+desc&limit=${limit}&format=json`;
-  return (await axios.get(url, { timeout: 12000 })).data.bills || [];
+  const res = await resilientGet(url, { timeout: 12000 }, 'Congress.gov bills');
+  return res?.data?.bills || [];
 }
-async function fetchBillDetail(c, t, n)     { return (await cgGet(`/bill/${c}/${t}/${n}`)).bill || null; }
+async function fetchBillDetail(c, t, n) {
+  const data = await cgGet(`/bill/${c}/${t}/${n}`);
+  return data?.bill || null;
+}
 async function fetchBillCosponsors(c, t, n) {
-  try { return (await cgGet(`/bill/${c}/${t}/${n}/cosponsors`)).cosponsors || []; } catch { return []; }
+  try {
+    const data = await cgGet(`/bill/${c}/${t}/${n}/cosponsors`);
+    return data?.cosponsors || [];
+  } catch { return []; }
 }
 async function fetchBillSummary(c, t, n) {
   try {
-    const list = (await cgGet(`/bill/${c}/${t}/${n}/summaries`)).summaries || [];
+    const data = await cgGet(`/bill/${c}/${t}/${n}/summaries`);
+    const list = data?.summaries || [];
     if (!list.length) return null;
     return list[list.length - 1].text?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || null;
   } catch { return null; }
@@ -230,7 +270,7 @@ function parseBillFromQuestion(question, congress) {
     [/\bS\.?\s*(\d+)\b(?!\s*Res)/i,       's'],
   ];
   for (const [re, type] of patterns) {
-    const m = question.match(re);
+    const m = (question || '').match(re);
     if (m) {
       const num = parseInt(m[1], 10);
       return { parsedBillId: billId(type, num), parsedUrl: billUrl(congress, type, num) };
@@ -240,10 +280,11 @@ function parseBillFromQuestion(question, congress) {
 }
 
 async function fetchRecentVotes(limit = 20) {
-  return (await axios.get(`${GOVTRACK_BASE}/vote`, {
+  const res = await resilientGet(`${GOVTRACK_BASE}/vote`, {
     params: { limit, sort: '-created', format: 'json' },
     timeout: 12000,
-  })).data.objects || [];
+  }, 'GovTrack');
+  return res?.data?.objects || [];
 }
 
 async function getNewVotes() {
@@ -275,15 +316,18 @@ async function getNewVotes() {
 
     const ch  = (chamber === 'senate') ? 'SENATE' : 'HOUSE';
     const tid = `vote:${congress}-${session}-${ch[0]}-${number}`;
-    if (hasPostedVote(tid)) continue;
 
     try {
+      // hasPostedVote is inside the try so a corrupt state file can't crash the whole loop
+      if (hasPostedVote(tid)) continue;
+
       let voters;
       if (ch === 'SENATE') {
-        voters = (await fetchSenateVoters(congress, session, number)) || [];
+        voters = await fetchSenateVoters(congress, session, number);
       } else {
-        voters = (await fetchHouseVoters(session, number, memberMap)) || [];
+        voters = await fetchHouseVoters(session, number, memberMap);
       }
+      voters = voters || [];
 
       const republicans = voters.filter(v => v.person?.party === 'Republican');
       const democrats   = voters.filter(v => v.person?.party === 'Democrat');
@@ -366,7 +410,12 @@ function addOneDay(isoDate) {
 async function fetchSenateScheduleStatus() {
   const year = new Date().getFullYear();
   const url  = `https://www.senate.gov/legislative/${year}_schedule.xml`;
-  const xml  = String((await axios.get(url, { timeout: 12000 })).data);
+  const res  = await resilientGet(url, { timeout: 12000 }, 'Senate schedule');
+  if (!res) {
+    console.warn('[checker] Senate schedule unavailable — assuming in session');
+    return { inSession: true, returnDate: null };
+  }
+  const xml   = String(res.data);
   const today = new Date().toISOString().split('T')[0];
 
   for (const block of xml.matchAll(/<date>([\s\S]*?)<\/date>/gi)) {
@@ -411,17 +460,18 @@ async function getLatestVote() {
   const memberMap = await getMemberMap();
 
   for (const vote of raw) {
+    if (!vote || typeof vote !== 'object') continue;
     const { congress, session, chamber, number, passed, result: voteResult,
             total_plus: yea = 0, total_minus: nay = 0, total_other: other = 0 } = vote;
-    if (voteResult === null || voteResult === undefined) continue;
+    if (voteResult == null) continue;
     const ch = chamber === 'senate' ? 'SENATE' : 'HOUSE';
     try {
       const voters = ch === 'SENATE'
-        ? ((await fetchSenateVoters(congress, session, number)) || [])
-        : ((await fetchHouseVoters(session, number, memberMap)) || []);
+        ? await fetchSenateVoters(congress, session, number)
+        : await fetchHouseVoters(session, number, memberMap);
 
-      const republicans = voters.filter(v => v.person?.party === 'Republican');
-      const democrats   = voters.filter(v => v.person?.party === 'Democrat');
+      const republicans = (voters || []).filter(v => v.person?.party === 'Republican');
+      const democrats   = (voters || []).filter(v => v.person?.party === 'Democrat');
       const didPass     = passed === true || /pass|agree|adopt|approv/i.test(String(voteResult));
       const rb = vote.related_bill;
       const { parsedBillId, parsedUrl } = parseBillFromQuestion(vote.question || '', congress);
@@ -525,7 +575,7 @@ async function getPresidentialActions() {
 // ─── getExecutiveOrders ───────────────────────────────────────────────────────
 
 async function getExecutiveOrders() {
-  const res = await axios.get('https://www.federalregister.gov/api/v1/documents.json', {
+  const res = await resilientGet('https://www.federalregister.gov/api/v1/documents.json', {
     params: {
       'conditions[type][]':                        'PRESDOCU',
       'conditions[presidential_document_type][]':  'executive_order',
@@ -533,9 +583,11 @@ async function getExecutiveOrders() {
       per_page: 5,
     },
     timeout: 12000,
-  });
+  }, 'Federal Register');
 
-  const docs   = res.data.results || [];
+  if (!res) return [];
+
+  const docs   = res.data?.results || [];
   const since  = cutoff(7);
   const result = [];
 

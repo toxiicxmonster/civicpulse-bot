@@ -4,6 +4,15 @@ const MAX = 278; // leave a 2-char buffer under X's 280-character post limit
 
 // ─── Hashtag generation ─────────────────────────────────────────────────────
 
+// Matched against bill title only — for appropriations bills that need department-specific tags.
+const APPROPRIATIONS_MAP = [
+  [/defense appropriations/i,         ['#DefenseBudget']],
+  [/labor[,\s]+hhs[,\s]+education/i,  ['#EducationFunding', '#Healthcare']],
+  [/financial services/i,             ['#FinancialServices']],
+  [/homeland security/i,              ['#HomelandSecurity']],
+  [/agriculture appropriations/i,     ['#AgricultureBudget']],
+];
+
 const HASHTAG_MAP = [
   [/\b(health\s?care|medicare|medicaid|aca|affordable care|health insurance|prescription|drug\s?price)/i, ['#Healthcare', '#Medicare']],
   [/\b(public health|health awareness|health disparit|health equity|disease prevention|epidemic|pandemic)/i, ['#PublicHealth']],
@@ -18,13 +27,50 @@ const HASHTAG_MAP = [
   [/\b(housing|rent|mortgage|homeless|affordable housing)/i,                                          ['#Housing']],
   [/\b(social security|disability|retirement|pension|elder|aging)/i,                                 ['#SocialSecurity']],
   [/\b(child(ren)?|family|daycare|childcare|maternity|paternity)/i,                                  ['#FamilyPolicy']],
-  [/\b(gun|firearm|second amendment|background check|rifle)/i,                                       ['#GunControl', '#SecondAmendment']],
+  // Gun: split by framing so opposing tags don't land on the same post
+  [/\b(gun control|gun violence|background check|assault weapon|red flag law)/i,                     ['#GunControl']],
+  [/\b(second amendment|right to bear arms|gun rights)/i,                                            ['#2A', '#GunRights']],
+  [/\b(gun|firearm|rifle)/i,                                                                         ['#GunControl']],
   [/\b(police|law enforcement|criminal justice|prison|sentencing|parole)/i,                          ['#CriminalJustice']],
   [/\b(election|voting right|ballot|campaign finance|gerrymandering)/i,                              ['#VotingRights']],
   [/\b(agriculture|farming|crop|livestock|usda|farm bill)/i,                                         ['#Agriculture']],
   [/\b(trade|export|import|wto|nafta|usmca|sanction)/i,                                              ['#Trade']],
   [/\b(tech(nology)?|artificial intelligence|ai|data privacy|cybersecurity|internet)/i,              ['#Technology', '#AI']],
   [/\b(small business|entrepreneur|startup|sba)/i,                                                   ['#SmallBusiness']],
+  [/\b(opioid|fentanyl|addiction|substance abuse)/i,                                                 ['#DrugPolicy', '#OpioidCrisis']],
+  [/\b(foreign policy|ukraine|israel|china|nato\s+allies)/i,                                         ['#ForeignPolicy']],
+  [/\b(budget|deficit|debt ceiling|spending cuts)/i,                                                 ['#FederalBudget', '#NationalDebt']],
+  [/\b(abortion|reproductive rights|planned parenthood)/i,                                           ['#ReproductiveRights']],
+  [/\b(minimum wage|labor union|union|workers?\s+right)/i,                                           ['#LaborRights', '#MinimumWage']],
+  [/\b(energy|oil|natural gas|nuclear|pipeline)/i,                                                   ['#EnergyPolicy']],
+  [/\b(food stamps|snap|welfare|poverty)/i,                                                          ['#FoodSecurity']],
+  [/\b(lgbtq|transgender|gender identity|discrimination)/i,                                          ['#LGBTQRights']],
+  [/\b(mental health|suicide|counseling|behavioral health)/i,                                        ['#MentalHealth']],
+  [/\b(space|nasa|satellite)/i,                                                                       ['#SpacePolicy']],
+  [/\b(cryptocurrency|blockchain|digital assets?|crypto)/i,                                          ['#Crypto', '#DigitalAssets']],
+  [/\b(native american|tribal|indigenous)/i,                                                         ['#IndigenousRights']],
+  // Conservative-leaning framing
+  [/\b(parental rights?|parents?\s+rights?|school curriculum)/i,                                     ['#ParentalRights']],
+  [/\b(religious freedom|religious liberty|faith.based)/i,                                           ['#ReligiousFreedom']],
+  [/\b(free speech|censorship|first amendment)/i,                                                    ['#FreeSpeech', '#FirstAmendment']],
+  [/\b(deregulation|regulation reform|red tape)/i,                                                   ['#Deregulation']],
+  [/\b(school choice|charter school|school voucher)/i,                                               ['#SchoolChoice']],
+  [/\b(illegal immigra|illegal alien|border wall)/i,                                                 ['#BorderSecurity', '#IllegalImmigration']],
+  [/\b(america\s+first|domestic production|reshoring)/i,                                             ['#AmericaFirst']],
+  [/\b(back the blue|police funding)/i,                                                              ['#BackTheBlue', '#LawEnforcement']],
+  [/\b(election integrity|voter\s+id|ballot security)/i,                                             ['#ElectionIntegrity']],
+  [/\b(free market|capitalism|private sector)/i,                                                     ['#FreeMarket']],
+  [/\b(pro.?life|unborn|sanctity of life)/i,                                                         ['#ProLife']],
+  [/\b(fiscal responsib|wasteful spending)/i,                                                        ['#FiscalResponsibility']],
+  [/\b(ccp|chinese communist|national security threat)/i,                                            ['#ChinaThreat']],
+  [/\b(energy independence|domestic energy production)\b|(?:drill|drilling)\s+(?:for|more|baby)/i,  ['#EnergyIndependence']],
+  // Bipartisan / neutral governance
+  [/\b(bipartisan|across.the.aisle)/i,                                                               ['#Bipartisan']],
+  [/\b(term limits?|congressional reform)/i,                                                         ['#TermLimits']],
+  [/\b(government accountability|transparency|oversight)/i,                                          ['#Accountability']],
+  [/\b(balanced budget|deficit spending)/i,                                                          ['#NationalDebt', '#BalancedBudget']],
+  [/\b(free trade|trade war)/i,                                                                      ['#FreeTrade']],
+  [/\b(constitution|constitutional)/i,                                                               ['#Constitution']],
 ];
 
 // Returns up to maxTags unique bill-specific hashtags based on title and synopsis.
@@ -32,6 +78,14 @@ function generateHashtags(title = '', synopsis = '', subjects = [], maxTags = 5)
   const text = [title, synopsis, ...subjects].join(' ');
   const seen = new Set();
   const tags = [];
+  for (const [re, candidates] of APPROPRIATIONS_MAP) {
+    if (re.test(title)) {
+      for (const tag of candidates) {
+        if (!seen.has(tag)) { seen.add(tag); tags.push(tag); }
+        if (tags.length >= maxTags) return tags;
+      }
+    }
+  }
   for (const [re, candidates] of HASHTAG_MAP) {
     if (re.test(text)) {
       for (const tag of candidates) {

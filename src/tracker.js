@@ -5,20 +5,26 @@ const path = require('path');
 const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'posted.json');
 
+const EMPTY_STATE = () => ({ bills: [], votes: [], presidentialActions: [], executiveOrders: [], hillReports: [], lastVoteDate: null, inRecess: false, lastBioUpdate: null, currentSessionStatus: null });
+
 function load() {
-  if (!fs.existsSync(STATE_FILE)) return { bills: [], votes: [], presidentialActions: [], executiveOrders: [], hillReports: [], lastVoteDate: null, inRecess: false };
+  if (!fs.existsSync(STATE_FILE)) return EMPTY_STATE();
   try {
-    const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    if (!s.bills)                 s.bills                  = [];
-    if (!s.votes)                 s.votes                  = [];
-    if (!s.lastVoteDate)          s.lastVoteDate           = null;
+    const raw = fs.readFileSync(STATE_FILE, 'utf8');
+    const s   = JSON.parse(raw);
+    if (!s || typeof s !== 'object' || Array.isArray(s)) return EMPTY_STATE();
+    if (!Array.isArray(s.bills))               s.bills               = [];
+    if (!Array.isArray(s.votes))               s.votes               = [];
+    if (!Array.isArray(s.presidentialActions)) s.presidentialActions = [];
+    if (!Array.isArray(s.executiveOrders))     s.executiveOrders     = [];
+    if (!Array.isArray(s.hillReports))         s.hillReports         = [];
+    if (!s.lastVoteDate)          s.lastVoteDate          = null;
     if (s.inRecess === undefined) s.inRecess               = false;
-    if (!s.presidentialActions)   s.presidentialActions    = [];
-    if (!s.executiveOrders)       s.executiveOrders        = [];
-    if (!s.hillReports)           s.hillReports            = [];
+    if (!s.lastBioUpdate)         s.lastBioUpdate          = null;
+    if (!s.currentSessionStatus)  s.currentSessionStatus   = null;
     return s;
   }
-  catch { return { bills: [], votes: [], presidentialActions: [], executiveOrders: [], hillReports: [], lastVoteDate: null, inRecess: false }; }
+  catch { return EMPTY_STATE(); }
 }
 
 function save(state) {
@@ -79,6 +85,18 @@ function setRecessState(flag) {
   save(s);
 }
 
+function getBioState() {
+  const s = load();
+  return { lastBioUpdate: s.lastBioUpdate || null, currentSessionStatus: s.currentSessionStatus || null };
+}
+
+function setBioState({ lastBioUpdate, currentSessionStatus }) {
+  const s = load();
+  s.lastBioUpdate        = lastBioUpdate;
+  s.currentSessionStatus = currentSessionStatus;
+  save(s);
+}
+
 module.exports = {
   hasPostedBill, markBillPosted,
   hasPostedVote, markVotePosted,
@@ -87,4 +105,5 @@ module.exports = {
   hasPostedHillReport, markHillReportPosted,
   getLastVoteDate, markLastVoteDate,
   isInRecess, setRecessState,
+  getBioState, setBioState,
 };
