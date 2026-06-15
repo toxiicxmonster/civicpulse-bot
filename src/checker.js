@@ -1,6 +1,6 @@
 'use strict';
 const axios = require('axios');
-const { hasPostedBill, hasPostedVote, hasPostedPresidentialAction, hasPostedEO, getLastVoteDate, isInRecess } = require('./tracker');
+const { hasPostedBill, markBillPosted, hasPostedVote, hasPostedPresidentialAction, markPresidentialActionPosted, hasPostedEO, markEOPosted, getLastVoteDate, isInRecess } = require('./tracker');
 const { calcPopRepresented } = require('./population');
 
 const CONGRESS_BASE = 'https://api.congress.gov/v3';
@@ -210,7 +210,7 @@ function cutoff(days) { const d = new Date(); d.setDate(d.getDate() - days); ret
 
 async function getNewBills() {
   const raw    = await fetchRecentBills(20);
-  const since  = cutoff(7);
+  const since  = cutoff(3);
   const result = [];
 
   for (const bill of raw) {
@@ -219,15 +219,19 @@ async function getNewBills() {
     const number   = bill.number;
     const tid      = `bill:${congress}:${type}:${number}`;
 
-    // Quick pre-filter: 14-day window so we don't miss bills with action just outside the 7-day cutoff
-    if ((bill.latestAction?.actionDate || '') < cutoff(14)) continue;
+    // Quick pre-filter: skip bills with no recent activity
+    if ((bill.latestAction?.actionDate || '') < cutoff(6)) continue;
     if (hasPostedBill(tid)) continue;
 
     try {
       const detail     = await fetchBillDetail(congress, type, number);
       if (!detail) continue;
-      // Definitive check: only post bills actually introduced within the window
-      if ((detail.introducedDate || '') < since) continue;
+      // Definitive check: only post bills introduced within the 3-day window.
+      // If the bill is older, mark it as seen so it is never re-evaluated.
+      if ((detail.introducedDate || '') < since) {
+        markBillPosted(tid);
+        continue;
+      }
       const summary    = await fetchBillSummary(congress, type, number);
       const cosponsors = await fetchBillCosponsors(congress, type, number);
 
@@ -548,6 +552,14 @@ async function getPresidentialActions() {
     const tid      = `${action}:${congress}:${type}:${number}`;
     if (hasPostedPresidentialAction(tid)) continue;
 
+    // Don't post if the signing/veto is older than 3 days — prevents stale catch-up posts.
+    // Mark as seen so this item is never re-evaluated.
+    if (actionDate < cutoff(3)) {
+      markPresidentialActionPosted(tid);
+      console.log(`[checker] ${tid} (${actionDate}) older than 3 days — marking as seen, skipping post`);
+      continue;
+    }
+
     try {
       const detail = await fetchBillDetail(congress, type, number);
       if (!detail) continue;
@@ -595,6 +607,12 @@ async function getExecutiveOrders() {
     if ((doc.signing_date || '') < since) continue;
     const tid = `eo:${doc.document_number}`;
     if (hasPostedEO(tid)) continue;
+
+    // Don't post EOs older than 3 days — mark as seen to prevent re-evaluation.
+    if ((doc.signing_date || '') < cutoff(3)) {
+      markEOPosted(tid);
+      continue;
+    }
 
     result.push({
       trackingId:  tid,
