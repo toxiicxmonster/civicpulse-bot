@@ -1,6 +1,6 @@
 'use strict';
 const axios = require('axios');
-const { hasPostedBill, hasPostedVote, hasPostedPresidentialAction, hasPostedEO, getLastVoteDate, isInRecess, isHouseInRecess, isSenateInRecess } = require('./tracker');
+const { hasPostedBill, hasPostedVote, hasPostedPresidentialAction, hasPostedEO, hasPostedTreaty, getLastVoteDate, isInRecess, isHouseInRecess, isSenateInRecess } = require('./tracker');
 const { calcPopRepresented } = require('./population');
 
 const CONGRESS_BASE = 'https://api.congress.gov/v3';
@@ -719,6 +719,59 @@ async function getExecutiveOrders() {
   return result;
 }
 
+// ─── getNewTreaties ───────────────────────────────────────────────────────────
+// Monitors Congress.gov /treaty for treaties submitted to the Senate within the
+// lookback window.  Each entry is a { trackingId, treatyId, topic, countries,
+// transmittedDate, url } object ready for formatTreatyPost().
+
+async function getNewTreaties() {
+  const data  = await cgGet('/treaty', { sort: 'updateDate+desc', limit: 20 });
+  if (!data) return [];
+
+  const items  = data.treaties || [];
+  const since  = cutoff(14); // 14-day window — treaties can be slow to appear in API
+  const result = [];
+
+  for (const t of items) {
+    const dateStr = t.transmittedDate || t.updateDate || '';
+    if (dateStr < since) continue;
+
+    const congress = t.congress;
+    const number   = String(t.number || '');
+    const suffix   = t.suffix || '';
+    const tid      = `treaty:${congress}-${number}${suffix}`;
+    if (hasPostedTreaty(tid)) continue;
+
+    let topic       = t.topic || 'Treaty';
+    let countries   = [];
+    let url         = null;
+
+    try {
+      const path   = `/treaty/${congress}/${number}${suffix ? `/${suffix}` : ''}`;
+      const detail = await cgGet(path);
+      if (detail?.treaty) {
+        const d   = detail.treaty;
+        topic     = d.topic || topic;
+        countries = (d.countriesParties || []).map(c => c.name || c.countryName).filter(Boolean);
+        url       = `https://www.congress.gov/treaty-document/${congress}th-congress/${number}`;
+      }
+    } catch (err) {
+      console.warn(`[checker] treaty ${tid} detail: ${err.message}`);
+    }
+
+    result.push({
+      trackingId:      tid,
+      treatyId:        `Treaty Doc. ${congress}-${number}${suffix}`,
+      topic,
+      countries,
+      transmittedDate: t.transmittedDate || t.updateDate || '',
+      url,
+    });
+  }
+
+  return result;
+}
+
 // ─── getHillReportData ────────────────────────────────────────────────────────
 // Returns all votes cast and bills introduced on a given date (YYYY-MM-DD).
 // Does NOT consult the dedup tracker — the caller decides whether to post.
@@ -774,4 +827,4 @@ async function getHillReportData(date = new Date().toISOString().split('T')[0]) 
   return { date, votes, bills };
 }
 
-module.exports = { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getCongressStatus, getLatestVote, getLatestBill, getHillReportData };
+module.exports = { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getNewTreaties, getAdjournmentUpdate, getCongressStatus, getLatestVote, getLatestBill, getHillReportData };

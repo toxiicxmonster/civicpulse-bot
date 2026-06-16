@@ -3,10 +3,10 @@ require('dotenv').config();
 
 const cron = require('node-cron');
 
-const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getCongressStatus, getHillReportData } = require('./checker');
-const { formatBillThread, formatVoteSummary, formatVoteQuestion, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport } = require('./formatter');
+const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getNewTreaties, getAdjournmentUpdate, getCongressStatus, getHillReportData } = require('./checker');
+const { formatBillThread, formatVoteSummary, formatVoteQuestion, formatSignedPost, formatVetoedPost, formatTreatyPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport } = require('./formatter');
 const { postThread, postVoteThread }                                                                  = require('./xpost');
-const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState, hasPostedHillReport, markHillReportPosted, isInRecess, isHouseInRecess, isSenateInRecess, setHouseRecessState, setSenateRecessState } = require('./tracker');
+const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markTreatyPosted, markLastVoteDate, setRecessState, hasPostedHillReport, markHillReportPosted, isInRecess, isHouseInRecess, isSenateInRecess, setHouseRecessState, setSenateRecessState } = require('./tracker');
 const { maybeUpdateBio, forceUpdateBio } = require('./bio');
 const { generateVoteImage }                                                             = require('./voteImage');
 
@@ -40,25 +40,27 @@ function validateEnv() {
 async function runOnce() {
   console.log(`[bot] ${new Date().toISOString()} — checking for new bills and votes…`);
 
-  const [bills, votes, presidentialActions, executiveOrders] = await Promise.allSettled([
-    getNewBills(), getNewVotes(), getPresidentialActions(), getExecutiveOrders(),
+  const [bills, votes, presidentialActions, executiveOrders, treaties] = await Promise.allSettled([
+    getNewBills(), getNewVotes(), getPresidentialActions(), getExecutiveOrders(), getNewTreaties(),
   ]);
 
-  const newBills              = bills.status              === 'fulfilled' ? bills.value              : [];
-  const newVotes              = votes.status              === 'fulfilled' ? votes.value              : [];
-  const newPresidentialActions = presidentialActions.status === 'fulfilled' ? presidentialActions.value : [];
-  const newExecutiveOrders    = executiveOrders.status    === 'fulfilled' ? executiveOrders.value    : [];
+  const newBills               = bills.status               === 'fulfilled' ? bills.value               : [];
+  const newVotes               = votes.status               === 'fulfilled' ? votes.value               : [];
+  const newPresidentialActions = presidentialActions.status === 'fulfilled' ? presidentialActions.value  : [];
+  const newExecutiveOrders     = executiveOrders.status     === 'fulfilled' ? executiveOrders.value      : [];
+  const newTreaties            = treaties.status            === 'fulfilled' ? treaties.value             : [];
 
-  if (bills.status              === 'rejected') console.error('[bot] bills error:',               bills.reason?.message);
-  if (votes.status              === 'rejected') console.error('[bot] votes error:',               votes.reason?.message);
-  if (presidentialActions.status === 'rejected') console.error('[bot] presidential actions error:', presidentialActions.reason?.message);
-  if (executiveOrders.status    === 'rejected') console.error('[bot] executive orders error:',    executiveOrders.reason?.message);
+  if (bills.status               === 'rejected') console.error('[bot] bills error:',                bills.reason?.message);
+  if (votes.status               === 'rejected') console.error('[bot] votes error:',                votes.reason?.message);
+  if (presidentialActions.status === 'rejected') console.error('[bot] presidential actions error:',  presidentialActions.reason?.message);
+  if (executiveOrders.status     === 'rejected') console.error('[bot] executive orders error:',      executiveOrders.reason?.message);
+  if (treaties.status            === 'rejected') console.error('[bot] treaties error:',              treaties.reason?.message);
 
   if (newVotes.length === 0 && votes.status === 'fulfilled') {
     console.log('[bot] no vote data available, skipping vote posts');
   }
 
-  console.log(`[bot] found ${newBills.length} new bill(s), ${newVotes.length} new vote(s), ${newPresidentialActions.length} presidential action(s), ${newExecutiveOrders.length} executive order(s)`);
+  console.log(`[bot] found ${newBills.length} new bill(s), ${newVotes.length} new vote(s), ${newPresidentialActions.length} presidential action(s), ${newExecutiveOrders.length} executive order(s), ${newTreaties.length} treaty/treaties`);
 
   // ── Bills: text thread ───────────────────────────────────────────────────────
   for (const bill of newBills) {
@@ -108,6 +110,17 @@ async function runOnce() {
     }
   }
 
+  // ── Treaties submitted to the Senate ─────────────────────────────────────────
+  for (const treaty of newTreaties) {
+    try {
+      await postThread([formatTreatyPost(treaty)]);
+      markTreatyPosted(treaty.trackingId);
+      console.log(`[bot] posted treaty ${treaty.treatyId}`);
+    } catch (err) {
+      console.error(`[bot] failed to post treaty ${treaty.treatyId}:`, err.message);
+    }
+  }
+
   // ── Track last vote date + adjournment detection ──────────────────────────────
   if (newVotes.length > 0) {
     markLastVoteDate(new Date().toISOString().split('T')[0]);
@@ -144,6 +157,13 @@ async function runOnce() {
       console.warn('[bot] bio force-update after recess change failed:', e.message));
   } else {
     await maybeUpdateBio(isHouseInRecess(), isSenateInRecess());
+  }
+
+  // ── Hill Report — early trigger when both chambers adjourn ────────────────────
+  // Falls back to the midnight cron if both are never simultaneously in recess.
+  if (isHouseInRecess() && isSenateInRecess()) {
+    await runHillReport(todayET()).catch(err =>
+      console.error('[bot] hill report (adjourn trigger) error:', err.message));
   }
 }
 

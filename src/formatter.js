@@ -298,6 +298,20 @@ function formatVetoedPost(action) {
   return `🚫 VETOED: ${action.billId}\n\n${title}${override}${url}${missed}\n\n${hashtags}`;
 }
 
+function formatTreatyPost(treaty) {
+  const dynamicTags   = generateHashtags(treaty.topic, '');
+  const hashtags      = ['#CivicPulse', '#Congress', '#Senate', '#Treaty', ...dynamicTags].join(' ');
+  const countriesLine = treaty.countries.length > 0
+    ? `\n🌍 ${treaty.countries.join(', ')}`
+    : '';
+  const dateLine = treaty.transmittedDate ? `\n📅 Transmitted: ${treaty.transmittedDate}` : '';
+  const urlLine  = treaty.url ? `\n\n📖 Read the treaty:\n${treaty.url}` : '';
+  const overhead = `🤝 TREATY SUBMITTED TO SENATE\n\n${treaty.treatyId}\n\n`.length
+    + countriesLine.length + dateLine.length + urlLine.length + `\n\n${hashtags}`.length;
+  const topic = trunc(treaty.topic, Math.max(40, MAX - overhead));
+  return `🤝 TREATY SUBMITTED TO SENATE\n\n${treaty.treatyId}\n\n${topic}${countriesLine}${dateLine}${urlLine}\n\n${hashtags}`;
+}
+
 function formatExecutiveOrderPost(eo) {
   const dynamicTags = generateHashtags(eo.title, eo.abstract || '');
   const hashtags    = ['#CivicPulse', '#ExecutiveOrder', ...dynamicTags].join(' ');
@@ -401,4 +415,4 @@ function formatHillReport({ date, votes, bills }) {
   return tweets;
 }
 
-module.exports = { formatBillThread, formatVoteThread, formatVoteSummary, formatVoteQuestion, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport };
+module.exports = { formatBillThread, formatVoteThread, formatVoteSummary, formatVoteQuestion, formatSignedPost, formatVetoedPost, formatTreatyPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport };

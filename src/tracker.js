@@ -5,7 +5,7 @@ const path = require('path');
 const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'posted.json');
 
-const EMPTY_STATE = () => ({ bills: [], votes: [], presidentialActions: [], executiveOrders: [], hillReports: [], lastVoteDate: null, inRecess: false, houseInRecess: false, senateInRecess: false, lastBioUpdate: null, currentSessionStatus: null });
+const EMPTY_STATE = () => ({ bills: [], votes: [], presidentialActions: [], executiveOrders: [], treaties: [], hillReports: [], lastVoteDate: null, inRecess: false, houseInRecess: false, senateInRecess: false, lastBioUpdate: null, currentSessionStatus: null });
 
 function load() {
   if (!fs.existsSync(STATE_FILE)) return EMPTY_STATE();
@@ -17,6 +17,7 @@ function load() {
     if (!Array.isArray(s.votes))               s.votes               = [];
     if (!Array.isArray(s.presidentialActions)) s.presidentialActions = [];
     if (!Array.isArray(s.executiveOrders))     s.executiveOrders     = [];
+    if (!Array.isArray(s.treaties))            s.treaties            = [];
     if (!Array.isArray(s.hillReports))         s.hillReports         = [];
     if (!s.lastVoteDate)                s.lastVoteDate          = null;
     if (s.inRecess === undefined)       s.inRecess              = false;
@@ -61,6 +62,14 @@ function markPresidentialActionPosted(id) {
 function markEOPosted(id) {
   const s = load();
   s.executiveOrders = [...new Set([...s.executiveOrders, String(id)])].slice(-500);
+  save(s);
+}
+
+function hasPostedTreaty(id)  { return (load().treaties || []).includes(String(id)); }
+
+function markTreatyPosted(id) {
+  const s = load();
+  s.treaties = [...new Set([...(s.treaties || []), String(id)])].slice(-500);
   save(s);
 }
 
@@ -119,6 +128,7 @@ module.exports = {
   hasPostedVote, markVotePosted,
   hasPostedPresidentialAction, markPresidentialActionPosted,
   hasPostedEO, markEOPosted,
+  hasPostedTreaty, markTreatyPosted,
   hasPostedHillReport, markHillReportPosted,
   getLastVoteDate, markLastVoteDate,
   isInRecess, setRecessState,
