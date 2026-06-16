@@ -6,7 +6,7 @@ const cron = require('node-cron');
 const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getCongressStatus, getHillReportData } = require('./checker');
 const { formatBillThread, formatVoteSummary, formatVoteQuestion, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport } = require('./formatter');
 const { postThread, postVoteThread }                                                                  = require('./xpost');
-const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState, hasPostedHillReport, markHillReportPosted, isInRecess, setHouseRecessState, setSenateRecessState } = require('./tracker');
+const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState, hasPostedHillReport, markHillReportPosted, isInRecess, isHouseInRecess, isSenateInRecess, setHouseRecessState, setSenateRecessState } = require('./tracker');
 const { maybeUpdateBio, forceUpdateBio } = require('./bio');
 const { generateVoteImage }                                                             = require('./voteImage');
 
@@ -135,7 +135,7 @@ async function runOnce() {
   }
 
   // ── Bio update (X only; respects X_UPDATE_BIO env flag) ─────────────────────
-  await maybeUpdateBio(isInRecess());
+  await maybeUpdateBio(isHouseInRecess(), isSenateInRecess());
 }
 
 // ─── Hill Report ─────────────────────────────────────────────────────────────
@@ -184,16 +184,18 @@ if (process.argv.includes('--single-run')) {
 } else if (process.argv.includes('--update-bio')) {
   // Usage:
   //   node src/bot.js --update-bio
-  //   node src/bot.js --update-bio --recess
-  //   node src/bot.js --update-bio --recess --return-date "July 7, 2026"
+  //   node src/bot.js --update-bio --house-recess
+  //   node src/bot.js --update-bio --senate-recess --return-date "July 7, 2026"
+  //   node src/bot.js --update-bio --house-recess --senate-recess
   //
   // Bypasses X_UPDATE_BIO flag and throttle — always writes to X bio.
-  const args       = process.argv.slice(2);
-  const inRecess   = args.includes('--recess');
-  const rdIdx      = args.indexOf('--return-date');
-  const returnDate = rdIdx !== -1 ? args[rdIdx + 1] : null;
+  const args        = process.argv.slice(2);
+  const houseRecess = args.includes('--house-recess') || args.includes('--recess');
+  const senateRecess= args.includes('--senate-recess') || args.includes('--recess');
+  const rdIdx       = args.indexOf('--return-date');
+  const returnDate  = rdIdx !== -1 ? args[rdIdx + 1] : null;
 
-  forceUpdateBio(inRecess, returnDate)
+  forceUpdateBio(houseRecess, senateRecess, returnDate)
     .then(() => { console.log('[bot] done'); process.exit(0); })
     .catch(err => { console.error('[bot] fatal:', err); process.exit(1); });
 

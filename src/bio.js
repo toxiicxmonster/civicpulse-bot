@@ -8,11 +8,17 @@ const STATIC = '🏛️ Real-time congressional tracking | Bills, votes, preside
 const FOOTER = '🤖 Automated bot | Powered by @USCivicPulse';
 const BIO_MAX = 160;
 
-function buildBio(inRecess, returnDate = null) {
-  const statusLine = inRecess
-    ? `📍 IN RECESS${returnDate ? ` | Returns: ${returnDate}` : ''}`
-    : '📍 IN SESSION';
-
+function buildBio(houseRecess, senateRecess, returnDate = null) {
+  let statusLine;
+  if (houseRecess && senateRecess) {
+    statusLine = `📍 CONGRESS IN RECESS${returnDate ? ` | Returns: ${returnDate}` : ''}`;
+  } else if (houseRecess) {
+    statusLine = `📍 HOUSE IN RECESS | SENATE IN SESSION`;
+  } else if (senateRecess) {
+    statusLine = `📍 SENATE IN RECESS | HOUSE IN SESSION${returnDate ? ` | Returns: ${returnDate}` : ''}`;
+  } else {
+    statusLine = '📍 CONGRESS IN SESSION';
+  }
   const full = `${STATIC}\n${statusLine}\n${FOOTER}`;
   return truncateBio(full);
 }
@@ -35,16 +41,17 @@ function truncateBio(text) {
 const IN_SESSION_MS = 30 * 60 * 1000;        // 30 minutes
 const IN_RECESS_MS  = 24 * 60 * 60 * 1000;   // 24 hours
 
-function shouldUpdateBio(inRecess) {
+function shouldUpdateBio(houseRecess, senateRecess) {
   const state      = getBioState();
   const now        = Date.now();
   const last       = state.lastBioUpdate ? new Date(state.lastBioUpdate).getTime() : 0;
   const prevStatus = state.currentSessionStatus;
-  const nextStatus = inRecess ? 'recess' : 'session';
+  const nextStatus = `house:${houseRecess}|senate:${senateRecess}`;
 
-  if (prevStatus !== nextStatus) return true; // status changed — always update
+  if (prevStatus !== nextStatus) return true;
 
-  const interval = inRecess ? IN_RECESS_MS : IN_SESSION_MS;
+  const inAnyRecess = houseRecess || senateRecess;
+  const interval    = inAnyRecess ? IN_RECESS_MS : IN_SESSION_MS;
   return (now - last) >= interval;
 }
 
@@ -68,26 +75,26 @@ async function updateXBio(bioText) {
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
 
-async function maybeUpdateBio(inRecess, returnDate = null) {
+async function maybeUpdateBio(houseRecess, senateRecess, returnDate = null) {
   if (process.env.X_UPDATE_BIO !== 'true') return;
-  if (!shouldUpdateBio(inRecess)) return;
-  await forceUpdateBio(inRecess, returnDate);
+  if (!shouldUpdateBio(houseRecess, senateRecess)) return;
+  await forceUpdateBio(houseRecess, senateRecess, returnDate);
 }
 
-async function forceUpdateBio(inRecess, returnDate = null) {
-  const bioText   = buildBio(inRecess, returnDate);
-  const newStatus = inRecess ? 'recess' : 'session';
+async function forceUpdateBio(houseRecess, senateRecess, returnDate = null) {
+  const bioText   = buildBio(houseRecess, senateRecess, returnDate);
+  const newStatus = `house:${houseRecess}|senate:${senateRecess}`;
 
   if (process.env.DRY_RUN === 'true') {
     console.log(`[bio] DRY RUN — bio would be (${[...bioText].length} chars):\n${bioText}`);
-    setBioState({ lastBioUpdate: new Date().toISOString(), currentSessionStatus: newStatus });
+    setBioState({ lastBioUpdate: new Date().toISOString(), currentSessionStatus: String(newStatus) });
     return;
   }
 
   try {
     await updateXBio(bioText);
-    setBioState({ lastBioUpdate: new Date().toISOString(), currentSessionStatus: newStatus });
-    console.log(`[bio] X bio updated — ${newStatus.toUpperCase()} (${[...bioText].length} chars)`);
+    setBioState({ lastBioUpdate: new Date().toISOString(), currentSessionStatus: String(newStatus) });
+    console.log(`[bio] X bio updated — ${newStatus} (${[...bioText].length} chars)`);
   } catch (err) {
     console.warn('[bio] failed to update X bio:', err.message);
   }
