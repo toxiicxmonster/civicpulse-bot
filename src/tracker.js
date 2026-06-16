@@ -5,7 +5,7 @@ const path = require('path');
 const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, '../data');
 const STATE_FILE = path.join(DATA_DIR, 'posted.json');
 
-const EMPTY_STATE = () => ({ bills: [], votes: [], presidentialActions: [], executiveOrders: [], hillReports: [], lastVoteDate: null, inRecess: false, lastBioUpdate: null, currentSessionStatus: null });
+const EMPTY_STATE = () => ({ bills: [], votes: [], presidentialActions: [], executiveOrders: [], hillReports: [], lastVoteDate: null, inRecess: false, houseInRecess: false, senateInRecess: false, lastBioUpdate: null, currentSessionStatus: null });
 
 function load() {
   if (!fs.existsSync(STATE_FILE)) return EMPTY_STATE();
@@ -18,10 +18,12 @@ function load() {
     if (!Array.isArray(s.presidentialActions)) s.presidentialActions = [];
     if (!Array.isArray(s.executiveOrders))     s.executiveOrders     = [];
     if (!Array.isArray(s.hillReports))         s.hillReports         = [];
-    if (!s.lastVoteDate)          s.lastVoteDate          = null;
-    if (s.inRecess === undefined) s.inRecess               = false;
-    if (!s.lastBioUpdate)         s.lastBioUpdate          = null;
-    if (!s.currentSessionStatus)  s.currentSessionStatus   = null;
+    if (!s.lastVoteDate)                s.lastVoteDate          = null;
+    if (s.inRecess === undefined)       s.inRecess              = false;
+    if (s.houseInRecess === undefined)  s.houseInRecess         = false;
+    if (s.senateInRecess === undefined) s.senateInRecess        = false;
+    if (!s.lastBioUpdate)               s.lastBioUpdate         = null;
+    if (!s.currentSessionStatus)        s.currentSessionStatus  = null;
     return s;
   }
   catch { return EMPTY_STATE(); }
@@ -70,8 +72,10 @@ function markHillReportPosted(date) {
   save(s);
 }
 
-function getLastVoteDate() { return load().lastVoteDate; }
-function isInRecess()      { return load().inRecess; }
+function getLastVoteDate()   { return load().lastVoteDate; }
+function isInRecess()        { return load().inRecess; }
+function isHouseInRecess()   { return load().houseInRecess; }
+function isSenateInRecess()  { return load().senateInRecess; }
 
 function markLastVoteDate(dateStr) {
   const s = load();
@@ -82,6 +86,19 @@ function markLastVoteDate(dateStr) {
 function setRecessState(flag) {
   const s = load();
   s.inRecess = flag;
+  save(s);
+}
+
+function setHouseRecessState(flag) {
+  const s = load();
+  s.houseInRecess = Boolean(flag);
+  save(s);
+}
+
+function setSenateRecessState(flag) {
+  const s = load();
+  s.senateInRecess = Boolean(flag);
+  s.inRecess = Boolean(flag); // keep legacy field in sync
   save(s);
 }
 
@@ -105,5 +122,7 @@ module.exports = {
   hasPostedHillReport, markHillReportPosted,
   getLastVoteDate, markLastVoteDate,
   isInRecess, setRecessState,
+  isHouseInRecess, setHouseRecessState,
+  isSenateInRecess, setSenateRecessState,
   getBioState, setBioState,
 };

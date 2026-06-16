@@ -6,7 +6,7 @@ const cron = require('node-cron');
 const { getNewBills, getNewVotes, getPresidentialActions, getExecutiveOrders, getAdjournmentUpdate, getCongressStatus, getHillReportData } = require('./checker');
 const { formatBillThread, formatVoteSummary, formatVoteQuestion, formatSignedPost, formatVetoedPost, formatExecutiveOrderPost, formatAdjournedPost, formatReturnedPost, formatSessionStatusPost, formatHillReport } = require('./formatter');
 const { postThread, postVoteThread }                                                                  = require('./xpost');
-const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState, hasPostedHillReport, markHillReportPosted, isInRecess } = require('./tracker');
+const { markBillPosted, markVotePosted, markPresidentialActionPosted, markEOPosted, markLastVoteDate, setRecessState, hasPostedHillReport, markHillReportPosted, isInRecess, setHouseRecessState, setSenateRecessState } = require('./tracker');
 const { maybeUpdateBio, forceUpdateBio } = require('./bio');
 const { generateVoteImage }                                                             = require('./voteImage');
 
@@ -112,22 +112,25 @@ async function runOnce() {
   if (newVotes.length > 0) {
     markLastVoteDate(new Date().toISOString().split('T')[0]);
   }
-  const adjStatus = await getAdjournmentUpdate(newVotes.map(v => v.voteId));
-  if (adjStatus === 'adjourned') {
-    try {
-      await postThread([formatAdjournedPost(null)]);
-      setRecessState(true);
-      console.log('[bot] posted adjournment notice');
-    } catch (err) {
-      console.error('[bot] failed to post adjournment notice:', err.message);
-    }
-  } else if (adjStatus === 'returned') {
-    try {
-      await postThread([formatReturnedPost()]);
-      setRecessState(false);
-      console.log('[bot] posted return-from-recess notice');
-    } catch (err) {
-      console.error('[bot] failed to post return notice:', err.message);
+  const adjUpdates = await getAdjournmentUpdate(newVotes.map(v => v.voteId));
+  for (const { chamber, status, returnDate } of adjUpdates) {
+    const setRecess = chamber === 'HOUSE' ? setHouseRecessState : setSenateRecessState;
+    if (status === 'adjourned') {
+      try {
+        await postThread([formatAdjournedPost(returnDate ?? null, chamber)]);
+        setRecess(true);
+        console.log(`[bot] posted ${chamber} adjournment notice`);
+      } catch (err) {
+        console.error(`[bot] failed to post ${chamber} adjournment notice:`, err.message);
+      }
+    } else if (status === 'returned') {
+      try {
+        await postThread([formatReturnedPost(chamber)]);
+        setRecess(false);
+        console.log(`[bot] posted ${chamber} return-from-recess notice`);
+      } catch (err) {
+        console.error(`[bot] failed to post ${chamber} return notice:`, err.message);
+      }
     }
   }
 

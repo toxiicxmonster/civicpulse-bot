@@ -1,6 +1,6 @@
 'use strict';
 const axios = require('axios');
-const { hasPostedBill, hasPostedVote, hasPostedPresidentialAction, hasPostedEO, getLastVoteDate, isInRecess } = require('./tracker');
+const { hasPostedBill, hasPostedVote, hasPostedPresidentialAction, hasPostedEO, getLastVoteDate, isInRecess, isHouseInRecess, isSenateInRecess } = require('./tracker');
 const { calcPopRepresented } = require('./population');
 
 const CONGRESS_BASE = 'https://api.congress.gov/v3';
@@ -366,28 +366,92 @@ async function getNewVotes() {
 }
 
 // ─── Adjournment detection ────────────────────────────────────────────────────
-// Compares today's date to the last known vote date. Returns 'adjourned',
-// 'returned', or null depending on the transition.
-// RECESS_THRESHOLD_DAYS: how many days without a vote before we call it a recess.
+// Returns an array of { chamber, status, returnDate } objects — one entry per
+// chamber that changed state this run (adjourned or returned).
+// Chambers are checked independently:
+//   HOUSE   — scraped from clerk.house.gov homepage (live status widget)
+//   SENATE  — Senate schedule XML (State Work Period blocks) + vote-gap fallback
+//
+// RECESS_THRESHOLD_DAYS: days without a Senate vote before falling back to the
+// schedule check. House status is authoritative and doesn't use this fallback.
 const RECESS_THRESHOLD_DAYS = 5;
 
-async function getAdjournmentUpdate(newVoteDates) {
-  const today      = new Date().toISOString().split('T')[0];
-  const lastKnown  = getLastVoteDate();
-  const alreadyIn  = isInRecess();
+async function fetchHouseScheduleStatus() {
+  const res = await resilientGet('https://clerk.house.gov/', {
+    timeout: 12000,
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' },
+  }, 'House Clerk homepage');
+  if (!res) {
+    console.warn('[checker] House Clerk homepage unavailable — assuming House in session');
+    return { inSession: true, returnDate: null };
+  }
+  const html = String(res.data);
 
-  if (newVoteDates.length > 0) {
-    // Votes appeared — if we were in recess, Congress just returned
-    if (alreadyIn) return 'returned';
+  const statusMatch = html.match(/id="menu-session-status"[^>]*>([^<]+)</);
+  const dateMatch   = html.match(/id="menu-session-status-date"[^>]*>([^<]+)</);
+
+  const statusText = statusMatch?.[1]?.trim() ?? '';
+  const inSession  = !statusText.toLowerCase().includes('not in session');
+
+  let returnDate = null;
+  if (!inSession && dateMatch) {
+    const raw = dateMatch[1].trim();
+    // "Next Session: June 18th, 2026 at 10:00 AM" → "June 18, 2026"
+    const m = raw.match(/Next Session:\s*([A-Za-z]+ \d+(?:st|nd|rd|th)?,?\s*\d{4})/i);
+    if (m) returnDate = m[1].replace(/(\d+)(?:st|nd|rd|th)/, '$1').replace(',', '');
+  }
+
+  console.log(`[checker] House status: "${statusText}"${returnDate ? ` — return: ${returnDate}` : ''}`);
+  return { inSession, returnDate };
+}
+
+async function getHouseSessionUpdate() {
+  const alreadyIn = isHouseInRecess();
+  const { inSession, returnDate } = await fetchHouseScheduleStatus();
+  if (!inSession && !alreadyIn) return { chamber: 'HOUSE', status: 'adjourned', returnDate };
+  if (inSession  &&  alreadyIn) return { chamber: 'HOUSE', status: 'returned',  returnDate: null };
+  return null;
+}
+
+async function getSenateSessionUpdate(newVoteIds) {
+  const today     = new Date().toISOString().split('T')[0];
+  const lastKnown = getLastVoteDate();
+  const alreadyIn = isSenateInRecess();
+
+  // New votes always mean "returned" if we thought Senate was in recess
+  if (newVoteIds.length > 0) {
+    if (alreadyIn) return { chamber: 'SENATE', status: 'returned', returnDate: null };
     return null;
   }
 
-  // No new votes this run
   if (!lastKnown) return null;
 
   const daysSinceVote = Math.floor((new Date(today) - new Date(lastKnown)) / 86400000);
-  if (!alreadyIn && daysSinceVote >= RECESS_THRESHOLD_DAYS) return 'adjourned';
+  if (!alreadyIn && daysSinceVote >= RECESS_THRESHOLD_DAYS) {
+    // Confirm with the official schedule before posting — prevents false
+    // positives on days Congress is sitting but hasn't voted yet.
+    const { inSession, returnDate } = await fetchSenateScheduleStatus();
+    if (inSession) {
+      console.log(`[checker] ${daysSinceVote}d since last Senate vote but schedule says in session — skipping`);
+      return null;
+    }
+    return { chamber: 'SENATE', status: 'adjourned', returnDate };
+  }
   return null;
+}
+
+// Returns array (may be empty) of { chamber, status, returnDate } updates.
+async function getAdjournmentUpdate(newVoteIds) {
+  const [houseUpdate, senateUpdate] = await Promise.allSettled([
+    getHouseSessionUpdate(),
+    getSenateSessionUpdate(newVoteIds),
+  ]);
+  const updates = [];
+  if (houseUpdate.status  === 'fulfilled' && houseUpdate.value)  updates.push(houseUpdate.value);
+  if (senateUpdate.status === 'fulfilled' && senateUpdate.value) updates.push(senateUpdate.value);
+  if (houseUpdate.status  === 'rejected') console.error('[checker] house session check failed:', houseUpdate.reason?.message);
+  if (senateUpdate.status === 'rejected') console.error('[checker] senate session check failed:', senateUpdate.reason?.message);
+  return updates;
 }
 
 // ─── getCongressStatus ────────────────────────────────────────────────────────

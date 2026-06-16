@@ -321,14 +321,29 @@ function formatSessionStatusPost(inRecess, returnDate) {
 }
 
 // ─── Adjournment posts ────────────────────────────────────────────────────────
+// chamber: 'HOUSE' | 'SENATE' | 'CONGRESS' (both / legacy)
 
-function formatAdjournedPost(returnDate) {
-  const line = returnDate ? `🗓️ Scheduled to return: ${returnDate}` : '🗓️ Return date not yet announced.';
-  return `🏛️ CONGRESS HAS ADJOURNED\n\nBoth chambers are now in recess. No votes or floor activity expected until they return.\n\n${line}\n\n#CivicPulse #Congress`;
+function formatAdjournedPost(returnDate, chamber = 'CONGRESS') {
+  const label = chamber === 'HOUSE' ? 'HOUSE' : chamber === 'SENATE' ? 'SENATE' : 'CONGRESS';
+  const body  = chamber === 'HOUSE'
+    ? 'The House is now in recess. No House floor votes expected until they return.'
+    : chamber === 'SENATE'
+    ? 'The Senate is now in recess. No Senate floor votes expected until they return.'
+    : 'Both chambers are now in recess. No votes or floor activity expected until they return.';
+  const chamberTag = chamber === 'HOUSE' ? ' #House' : chamber === 'SENATE' ? ' #Senate' : '';
+  const dateLine   = returnDate ? `🗓️ Scheduled to return: ${returnDate}` : '🗓️ Return date not yet announced.';
+  return `🏛️ ${label} HAS ADJOURNED\n\n${body}\n\n${dateLine}\n\n#CivicPulse #Congress${chamberTag}`;
 }
 
-function formatReturnedPost() {
-  return `🏛️ CONGRESS HAS RETURNED\n\nBoth chambers are back in session. Legislative activity has resumed — stay tuned for upcoming votes.\n\n#CivicPulse #Congress`;
+function formatReturnedPost(chamber = 'CONGRESS') {
+  const label = chamber === 'HOUSE' ? 'HOUSE' : chamber === 'SENATE' ? 'SENATE' : 'CONGRESS';
+  const body  = chamber === 'HOUSE'
+    ? 'The House is back in session. House floor activity has resumed — stay tuned for upcoming votes.'
+    : chamber === 'SENATE'
+    ? 'The Senate is back in session. Senate floor activity has resumed — stay tuned for upcoming votes.'
+    : 'Both chambers are back in session. Legislative activity has resumed — stay tuned for upcoming votes.';
+  const chamberTag = chamber === 'HOUSE' ? ' #House' : chamber === 'SENATE' ? ' #Senate' : '';
+  return `🏛️ ${label} HAS RETURNED\n\n${body}\n\n#CivicPulse #Congress${chamberTag}`;
 }
 
 // ─── Hill Report thread ───────────────────────────────────────────────────────
