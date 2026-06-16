@@ -370,16 +370,18 @@ async function getNewVotes() {
 // chamber that changed state this run (adjourned or returned).
 // Chambers are checked independently:
 //   HOUSE   — scraped from clerk.house.gov homepage (live status widget)
-//   SENATE  — Senate schedule XML (State Work Period blocks) + vote-gap fallback
+//   SENATE  — scraped from senate.gov next-session date; XML schedule as fallback
 //
-// RECESS_THRESHOLD_DAYS: days without a Senate vote before falling back to the
-// schedule check. House status is authoritative and doesn't use this fallback.
-const RECESS_THRESHOLD_DAYS = 5;
+// SENATE_RECESS_GAP_DAYS: if the next scheduled Senate session is more than this
+// many days away the Senate is on a real recess (not a normal overnight break).
+const SENATE_RECESS_GAP_DAYS = 5;
+
+const CLERK_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
 async function fetchHouseScheduleStatus() {
   const res = await resilientGet('https://clerk.house.gov/', {
     timeout: 12000,
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36' },
+    headers: { 'User-Agent': CLERK_UA },
   }, 'House Clerk homepage');
   if (!res) {
     console.warn('[checker] House Clerk homepage unavailable — assuming House in session');
@@ -396,12 +398,64 @@ async function fetchHouseScheduleStatus() {
   let returnDate = null;
   if (!inSession && dateMatch) {
     const raw = dateMatch[1].trim();
-    // "Next Session: June 18th, 2026 at 10:00 AM" → "June 18, 2026"
-    const m = raw.match(/Next Session:\s*([A-Za-z]+ \d+(?:st|nd|rd|th)?,?\s*\d{4})/i);
-    if (m) returnDate = m[1].replace(/(\d+)(?:st|nd|rd|th)/, '$1').replace(',', '');
+    // "Next Session: June 18th, 2026 at 10:00 AM" → "June 18, 2026 at 10:00 AM"
+    const m = raw.match(/Next Session:\s*([A-Za-z]+ \d+(?:st|nd|rd|th)?,?\s*\d{4}(?:\s+at\s+\d+:\d+\s*[APap][Mm])?)/i);
+    if (m) {
+      returnDate = m[1]
+        .replace(/(\d+)(?:st|nd|rd|th)/, '$1') // strip ordinal suffix
+        .replace(/,(\s*\d{4})/, '$1')           // remove comma before year
+        .trim();
+    }
   }
 
   console.log(`[checker] House status: "${statusText}"${returnDate ? ` — return: ${returnDate}` : ''}`);
+  return { inSession, returnDate };
+}
+
+async function fetchSenateHomepageStatus() {
+  const res = await resilientGet('https://www.senate.gov/', {
+    timeout: 12000,
+    headers: { 'User-Agent': CLERK_UA },
+  }, 'Senate.gov homepage');
+  if (!res) {
+    console.warn('[checker] Senate.gov homepage unavailable — falling back to schedule XML');
+    return fetchSenateScheduleStatus();
+  }
+  const html = String(res.data);
+
+  // Match the FIRST (live) proceedings_schedule block — there is a commented-out
+  // example block further down the page that we must not accidentally match.
+  const m = html.match(/id="proceedings_schedule"[^>]*>\s*<h3>([^<]+)<\/h3>\s*<span[^>]*>([^<]*)<\/span>/);
+  if (!m) {
+    console.warn('[checker] Senate.gov: could not parse proceedings_schedule — falling back to XML');
+    return fetchSenateScheduleStatus();
+  }
+
+  const rawDate = m[1].trim(); // "Tuesday, Jun 16, 2026"
+  const rawTime = m[2].trim(); // "Convene at 10:00 a.m. "
+
+  const dateOnly   = rawDate.replace(/^[A-Za-z]+,\s*/, ''); // strip weekday
+  const nextSession = new Date(dateOnly + 'T12:00:00');      // noon avoids TZ drift
+
+  if (isNaN(nextSession.getTime())) {
+    console.warn(`[checker] Senate.gov: unparseable date "${rawDate}" — falling back`);
+    return fetchSenateScheduleStatus();
+  }
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const daysTil   = Math.floor((nextSession - today) / 86400000);
+  const inSession = daysTil <= SENATE_RECESS_GAP_DAYS;
+
+  let returnDate = null;
+  if (!inSession) {
+    const timeMatch = rawTime.match(/(\d+:\d+\s*(?:a\.m\.|p\.m\.|[ap]m))/i);
+    const timeStr   = timeMatch ? ` at ${timeMatch[1].replace(/\./g, '').trim()}` : '';
+    returnDate = nextSession.toLocaleDateString('en-US', {
+      month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC',
+    }) + timeStr;
+  }
+
+  console.log(`[checker] Senate next session: "${rawDate}" (${daysTil}d away) — ${inSession ? 'in session' : `recess, returns: ${returnDate}`}`);
   return { inSession, returnDate };
 }
 
@@ -414,29 +468,18 @@ async function getHouseSessionUpdate() {
 }
 
 async function getSenateSessionUpdate(newVoteIds) {
-  const today     = new Date().toISOString().split('T')[0];
-  const lastKnown = getLastVoteDate();
   const alreadyIn = isSenateInRecess();
 
-  // New votes always mean "returned" if we thought Senate was in recess
+  // New votes = Senate is clearly in session
   if (newVoteIds.length > 0) {
     if (alreadyIn) return { chamber: 'SENATE', status: 'returned', returnDate: null };
     return null;
   }
 
-  if (!lastKnown) return null;
-
-  const daysSinceVote = Math.floor((new Date(today) - new Date(lastKnown)) / 86400000);
-  if (!alreadyIn && daysSinceVote >= RECESS_THRESHOLD_DAYS) {
-    // Confirm with the official schedule before posting — prevents false
-    // positives on days Congress is sitting but hasn't voted yet.
-    const { inSession, returnDate } = await fetchSenateScheduleStatus();
-    if (inSession) {
-      console.log(`[checker] ${daysSinceVote}d since last Senate vote but schedule says in session — skipping`);
-      return null;
-    }
-    return { chamber: 'SENATE', status: 'adjourned', returnDate };
-  }
+  // Check senate.gov homepage for next scheduled session date
+  const { inSession, returnDate } = await fetchSenateHomepageStatus();
+  if (!inSession && !alreadyIn) return { chamber: 'SENATE', status: 'adjourned', returnDate };
+  if (inSession  &&  alreadyIn) return { chamber: 'SENATE', status: 'returned',  returnDate: null };
   return null;
 }
 

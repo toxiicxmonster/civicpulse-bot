@@ -113,12 +113,14 @@ async function runOnce() {
     markLastVoteDate(new Date().toISOString().split('T')[0]);
   }
   const adjUpdates = await getAdjournmentUpdate(newVotes.map(v => v.voteId));
+  let recessStateChanged = false;
   for (const { chamber, status, returnDate } of adjUpdates) {
     const setRecess = chamber === 'HOUSE' ? setHouseRecessState : setSenateRecessState;
     if (status === 'adjourned') {
       try {
         await postThread([formatAdjournedPost(returnDate ?? null, chamber)]);
         setRecess(true);
+        recessStateChanged = true;
         console.log(`[bot] posted ${chamber} adjournment notice`);
       } catch (err) {
         console.error(`[bot] failed to post ${chamber} adjournment notice:`, err.message);
@@ -127,6 +129,7 @@ async function runOnce() {
       try {
         await postThread([formatReturnedPost(chamber)]);
         setRecess(false);
+        recessStateChanged = true;
         console.log(`[bot] posted ${chamber} return-from-recess notice`);
       } catch (err) {
         console.error(`[bot] failed to post ${chamber} return notice:`, err.message);
@@ -135,7 +138,13 @@ async function runOnce() {
   }
 
   // ── Bio update (X only; respects X_UPDATE_BIO env flag) ─────────────────────
-  await maybeUpdateBio(isHouseInRecess(), isSenateInRecess());
+  // Force-update on state change so the bio is never stale after an adjournment post.
+  if (recessStateChanged && process.env.X_UPDATE_BIO === 'true') {
+    await forceUpdateBio(isHouseInRecess(), isSenateInRecess()).catch(e =>
+      console.warn('[bot] bio force-update after recess change failed:', e.message));
+  } else {
+    await maybeUpdateBio(isHouseInRecess(), isSenateInRecess());
+  }
 }
 
 // ─── Hill Report ─────────────────────────────────────────────────────────────
